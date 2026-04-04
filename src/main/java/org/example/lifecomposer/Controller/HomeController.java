@@ -12,6 +12,11 @@ public class HomeController {
         return "home";
     }
 
+    @GetMapping("/login")
+    public String login() {
+        return "login";
+    }
+
     @GetMapping("/admin")
     public String adminMain(Authentication authentication) {
         if (isAdmin(authentication)) {

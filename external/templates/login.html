@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>登录</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-container { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 0 12px rgba(0,0,0,.1); width: 360px; }
+        .login-header { text-align: center; margin-bottom: 20px; }
+        .login-header h1 { color: #333; margin: 0; }
+        .form-group { margin-bottom: 14px; }
+        .form-group label { display: block; margin-bottom: 6px; font-weight: bold; }
+        .form-group input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        .btn { width: 100%; padding: 10px; background: #007bff; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        .btn:hover { background: #0056b3; }
+        .alert { padding: 12px; margin-bottom: 16px; border: 1px solid transparent; border-radius: 4px; }
+        .alert-danger { color: #721c24; background: #f8d7da; border-color: #f5c6cb; }
+        .alert-success { color: #155724; background: #d4edda; border-color: #c3e6cb; }
+        .back-link { text-align: center; margin-top: 15px; }
+        .back-link a { color: #007bff; text-decoration: none; }
+    </style>
+</head>
+<body>
+<div class="login-container">
+    <div class="login-header"><h1>用户登录</h1></div>
+
+    <div id="msg" style="display:none" class="alert"></div>
+
+    <form id="loginForm">
+        <div class="form-group">
+            <label for="username">用户名:</label>
+            <input type="text" id="username" name="username" required>
+        </div>
+        <div class="form-group">
+            <label for="password">密码:</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        <button type="submit" class="btn">登录</button>
+    </form>
+
+    <div class="back-link"><a href="/">← 返回首页</a></div>
+</div>
+
+<script>
+    const msgEl = document.getElementById('msg');
+
+    function showMsg(text, ok) {
+        msgEl.textContent = text;
+        msgEl.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger');
+        msgEl.style.display = 'block';
+    }
+
+    (function loadQueryMsg() {
+        const params = new URLSearchParams(location.search);
+        if (params.get('logout')) {
+            showMsg('您已成功登出', true);
+        } else if (params.get('banned')) {
+            const t = params.get('bannedTime') || '未知';
+            showMsg('账户被封禁至 ' + t, false);
+        } else if (params.get('error')) {
+            showMsg('用户名或密码错误', false);
+        }
+    })();
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+
+        try {
+            const resp = await fetch('/api/users/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            const text = await resp.text();
+            if (!resp.ok) {
+                showMsg(text || '登录失败', false);
+                return;
+            }
+
+            showMsg('登录成功，正在跳转...', true);
+
+            const currentResp = await fetch('/api/users/current');
+            if (currentResp.ok) {
+                const user = await currentResp.json();
+                if (user.type === 2) {
+                    location.href = '/admin';
+                    return;
+                }
+            }
+            location.href = '/';
+        } catch (err) {
+            showMsg('登录请求失败: ' + err.message, false);
+        }
+    });
+</script>
+</body>
+</html>
