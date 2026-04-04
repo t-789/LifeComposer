@@ -1,0 +1,242 @@
+# 用户注册，成功注册后返回 "注册成功"
+curl -X POST http://localhost:8080/api/users/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"api_test_user","password":"password123"}'
+注册成功
+注册失败，用户名可能已存在
+
+# 用户注册（带头像和密保问题）
+# 注意：需要使用 multipart/form-data 格式
+curl -X POST http://localhost:8080/api/users/register-with-security \
+  -F "username=api_test_user_with_avatar" \
+  -F "password=password123" \
+  -F "avatar=@/path/to/avatar.jpg" \
+  -F "question1=1" \
+  -F "answer1=北京" \
+  -F "question2=2" \
+  -F "answer2=蓝色"
+注册成功
+注册失败，用户名可能已存在
+
+# 获取安全问题列表
+curl -X GET http://localhost:8080/api/users/security-questions
+返回样例：
+[{"key":1,"value":"你的出生地是哪里？"},{"key":2,"value":"你最喜欢的颜色是什么？"},{"key":3,"value":"你母亲的姓名是？"}]
+
+# 通过密保问题重置密码
+curl -X POST http://localhost:8080/api/users/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{"username":"api_test_user","answer1":"北京","answer2":"蓝色"}'
+密码重置成功，新密码为: 000000
+用户不存在
+密保问题答案不正确
+密码重置失败
+
+# 用户登录，成功后会设置cookie
+curl -X POST http://localhost:8080/api/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"api_test_user","password":"password123"}' \
+  -c cookie.txt
+登录成功
+账户被封禁至2026-10-05 16:45:17.14
+登录失败，用户名或密码错误
+
+# 用户登出
+curl -X POST http://localhost:8080/api/users/logout \
+  -b cookie.txt
+登出成功
+
+# 管理员重置用户密码（需要管理员权限）假设用户ID为3
+curl -X POST http://localhost:8080/api/users/admin/reset-password/3 \
+  -b cookie.txt
+权限不足
+密码重置成功，新密码为: 000000
+密码重置失败
+用户不存在
+
+# 获取系统统计信息
+curl -X GET http://localhost:8080/api/statistic/get
+返回样例：
+{"point_count":10,"user_count":5,"post_count":3}
+
+# 获取用户个人主页信息
+curl -X GET http://localhost:8080/api/users/profile -b cookie.txt
+返回样例：
+{"pointCount":5,"postCount":3,"credit":100}
+
+# 保存点位 （需要认证）假设x为100.5，y为200.3
+curl -X POST http://localhost:8080/api/points/save \
+  -H "Content-Type: application/json" \
+  -b cookie.txt \
+  -d '{"x": 100.3, "y": 200.5, "type": 1, "description": "I don'\''t know."}'
+还没有登录
+{"id": {id}, "message": "点位保存成功"}
+点位已存在
+点位保存失败
+
+# 保存点位（带图片描述）（需要认证）
+curl -X POST http://localhost:8080/api/points/save \
+  -H "Content-Type: multipart/form-data" \
+  -b cookie.txt \
+  -F "x=100.3" \
+  -F "y=200.5" \
+  -F "type=1" \
+  -F "description=点位描述" \
+  -F "image_description=@/path/to/image.jpg"
+还没有登录
+{"id": {id}, "message": "点位保存成功"}
+点位已存在
+点位保存失败
+
+# 获取点位列表
+curl -X GET http://localhost:8080/api/points/active -b cookie.txt
+或者：curl -s -b cookie.txt http://localhost:8080/api/points/active
+返回样例：
+[{"id":4,"userId":4,"x":134.5,"y":20.3,"markedTime":"2025-10-05T08:30:48.475+00:00","deleted":false,"deletedTime":null,"proposeDelete":0,"confirmCount":1,"level":3,"type":0,"description":null,"typeName":"未知"},{"id":5,"userId":5,"x":1.5,"y":2.3,"markedTime":"2025-10-06T06:24:55.219+00:00","deleted":false,"deletedTime":null,"proposeDelete":0,"confirmCount":0,"level":3,"type":0,"description":null,"typeName":"未知"}]
+
+# 根据距离获取点位
+curl -X GET "http://localhost:8080/api/points/distance?x=100&y=200&distance=50" -b cookie.txt
+返回样例：
+[{"id":4,"userId":4,"x":134.5,"y":20.3,"markedTime":"2025-10-05T08:30:48.475+00:00","deleted":false,"deletedTime":null,"proposeDelete":0,"confirmCount":1,"level":3,"type":0,"description":null,"typeName":"未知"},{"id":5,"userId":5,"x":1.5,"y":2.3,"markedTime":"2025-10-06T06:24:55.219+00:00","deleted":false,"deletedTime":null,"proposeDelete":0,"confirmCount":0,"level":3,"type":0,"description":null,"typeName":"未知"}]
+
+# 提议删除点位（需要认证）假设点位ID为1
+curl -X POST http://localhost:8080/api/points/1/propose-delete \
+  -H "Content-Type: application/json" \
+  -b cookie.txt \
+  -d '{}'
+还没有登录
+提议删除成功
+提议删除失败，可能是因为点位不存在
+-2: 用户已提议过，不允许重复提议
+-4: 点位已删除
+操作失败，错误原因未知，请联系管理员。
+
+# 确认点位存在（需要认证，不能确认自己创建的点位）假设点位ID为1
+curl -X POST http://localhost:8080/api/points/1/confirm \
+  -H "Content-Type: application/json" \
+  -b cookie.txt \
+  -d '{}'
+还没有登录
+确认点位成功
+确认点位失败，可能是因为点位不存在
+用户已确认过该点位，不允许重复确认
+点位已删除
+操作失败，错误原因未知，请联系管理员。
+
+# 设置类型映射（需要管理员权限）
+curl -X POST http://localhost:8080/api/points/type-map \
+  -H "Content-Type: application/json" \
+  -b cookie.txt \
+  -d '{"typeId": 1, "typeName": "危险区域"}'
+权限不足
+类型映射保存成功
+类型映射保存失败
+
+# 获取所有类型映射
+curl -X GET http://localhost:8080/api/points/type-map -b cookie.txt
+返回样例：
+{"1":"危险区域","2":"施工区域","3":"低风险区域"}
+
+# 提交用户反馈
+curl -X POST http://localhost:8080/api/feedback/submit \
+  -H "Content-Type: application/json" \
+  -b cookie.txt \
+  -d '{"content": "这个功能很好用", "url": "/points", "userAgent": "Mozilla/5.0..."}'
+返回样例：
+{"message": "反馈提交成功"}
+{"error": "反馈提交失败"}
+
+# 提交系统错误反馈（内部使用）
+curl -X POST http://localhost:8080/api/feedback/system-error \
+  -H "Content-Type: application/json" \
+  -b cookie.txt \
+  -d '{"content": "空指针异常", "url": "/points", "userAgent": "Mozilla/5.0...", "stackTrace": "java.lang.NullPointerException..."}'
+返回样例：
+{"message": "系统错误报告已提交"}
+{"error": "系统错误报告提交失败"}
+
+# 获取所有反馈（仅管理员）
+curl -X GET http://localhost:8080/api/feedback/all -b cookie.txt
+权限不足
+返回样例：
+[{"id":1,"userId":1,"username":"admin","content":"空指针异常","type":"system","url":"/points","userAgent":"Mozilla/5.0...","stackTrace":"java.lang.NullPointerException...","createTime":"2025-10-25T10:30:00.000+00:00","resolved":false,"resolvedBy":null,"resolvedTime":null}]
+
+# 根据类型获取反馈（仅管理员）system 或 user
+curl -X GET http://localhost:8080/api/feedback/type/system -b cookie.txt
+权限不足
+返回样例：
+[{"id":1,"userId":1,"username":"admin","content":"空指针异常","type":"system","url":"/points","userAgent":"Mozilla/5.0...","stackTrace":"java.lang.NullPointerException...","createTime":"2025-10-25T10:30:00.000+00:00","resolved":false,"resolvedBy":null,"resolvedTime":null}]
+
+# 更新反馈解决状态（仅管理员）
+curl -X POST http://localhost:8080/api/feedback/1/resolve \
+  -H "Content-Type: application/json" \
+  -b cookie.txt \
+  -d '{"resolved": true}'
+权限不足
+{"message": "反馈状态更新成功"}
+{"error": "反馈状态更新失败"}
+
+# 创建论坛帖子（需要认证）
+curl -X POST http://localhost:8080/api/forum/create \
+  -H "Content-Type: application/json" \
+  -b cookie.txt \
+  -d '{"title": "测试帖子标题", "content": "这是帖子的内容"}'
+用户未登录
+帖子创建成功
+帖子创建失败
+
+# 获取所有论坛帖子（需要认证，不需要管理员权限）
+curl -X GET http://localhost:8080/api/forum/all -b cookie.txt
+用户未登录
+返回样例：
+[{"id":1,"user_id":1,"title":"测试帖子标题","content":"这是帖子的内容","release_time":"2025-10-19T07:30:00.000+00:00","username":"admin"}]
+
+# 根据用户ID获取论坛帖子（需要认证，不需要管理员权限）假设用户ID为1
+curl -X GET http://localhost:8080/api/forum/user/1 -b cookie.txt
+用户未登录
+返回样例：
+[{"id":1,"user_id":1,"title":"测试帖子标题","content":"这是帖子的内容","release_time":"2025-10-19T07:30:00.000+00:00","username":"admin"}]
+
+# 获取特定帖子详情（需要认证）
+curl -X GET http://localhost:8080/api/forum/1 -b cookie.txt
+用户未登录
+{"id":1,"user_id":1,"title":"测试帖子标题","content":"这是帖子的内容","release_time":"2025-10-19T07:30:00.000+00:00","username":"admin"}
+帖子不存在
+
+# 删除论坛帖子（需要管理员权限）假设帖子ID为1
+curl -X DELETE http://localhost:8080/api/forum/1 -b cookie.txt
+权限不足
+帖子删除成功
+删除帖子失败: 帖子不存在
+
+
+# DeepSeek调用
+curl -X POST "http://localhost:8080/api/ai/deepseek" \
+   -H "Content-Type: application/json" \
+   -d '{"prompt":"你好，DeepSeek！"}'
+{"type":"ai","content":"你好！很高兴见到你！\uD83D\uDE0A\n\n我是DeepSeek，由深度求索公司创造的AI助手。我在这里随时准备为你提供帮助，无论是回答问题、协助思考问题、创作内容，还是进行有趣的对话。\n\n有什么我可以帮你的吗？不管是学习、工作还是生活中的任何话题，我都很乐意和你一起探讨！✨","timestamp":"2025-10-26T23:02:12.760216","messageCount":null}
+
+# 点赞
+curl -X POST http://localhost:8080/api/forum/1/like -b cookie.txt
+点赞成功
+您已经点过赞了
+
+# 取消点赞
+curl -X DELETE http://localhost:8080/api/forum/1/like -b cookie.txt
+取消点赞成功
+您尚未点赞
+
+# 收藏
+curl -X POST http://localhost:8080/api/forum/1/favorite -b cookie.txt
+收藏成功
+您已经收藏过了
+
+# 取消收藏
+curl -X DELETE http://localhost:8080/api/forum/1/favorite -b cookie.txt
+取消收藏成功
+您尚未收藏
+
+# 评论
+curl -X POST -d "content=这是我的评论" http://localhost:8080/api/forum/1/comment -b cookie.txt
+curl -X POST "http://localhost:8080/api/forum/1/comment?content=%E8%BF%99%E6%98%AF%E6%88%91%E7%9A%84%E8%AF%84%E8%AE%BA" -b cookie.txt
+评论成功，评论ID:【id】

@@ -1,4 +1,4 @@
-package org.example.lifecomposer.controller;
+package org.example.lifecomposer.Controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
