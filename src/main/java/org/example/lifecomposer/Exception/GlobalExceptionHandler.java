@@ -3,6 +3,7 @@ package org.example.lifecomposer.Exception;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.example.lifecomposer.service.FeedbackService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -11,7 +12,9 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import java.net.URI;
 import java.util.Set;
 
 @ControllerAdvice
@@ -44,7 +47,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<String> handleException(Exception ex, WebRequest request) {
+    public ResponseEntity<String> handleException(Exception ex, WebRequest request, HttpServletRequest httpRequest) {
         if (isBotRequest(request.getHeader("User-Agent"))) {
             logger.warn("Bot request: {}", request.getDescription(false));
             return ResponseEntity.status(403).body("Forbidden");
@@ -54,12 +57,22 @@ public class GlobalExceptionHandler {
             if (IGNORED_NOT_FOUND_URLS.stream().noneMatch(url -> request.getDescription(false).contains(url))) {
                 logger.warn("Resource not found: {}", request.getDescription(false));
             }
-            return ResponseEntity.notFound().build();
+            if (isApiRequest(httpRequest)) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(URI.create("/error/404"))
+                    .build();
         }
 
         if (ex instanceof HttpRequestMethodNotSupportedException) {
             logger.warn("Method not supported: {}", request.getDescription(false));
-            return ResponseEntity.notFound().build();
+            if (isApiRequest(httpRequest)) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(URI.create("/error/404"))
+                    .build();
         }
 
         if (ex instanceof org.springframework.web.HttpMediaTypeNotSupportedException) {
@@ -119,5 +132,13 @@ public class GlobalExceptionHandler {
         if (userAgent == null || userAgent.isEmpty()) return true;
         String ua = userAgent.toLowerCase();
         return BOT_USER_AGENTS.stream().anyMatch(ua::contains);
+    }
+
+    private boolean isApiRequest(HttpServletRequest request) {
+        if (request == null) {
+            return false;
+        }
+        String uri = request.getRequestURI();
+        return uri != null && uri.startsWith("/api/");
     }
 }
