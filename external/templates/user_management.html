@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>用户管理</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1220px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,.08); }
+        h1 { text-align: center; color: #333; }
+        .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #f2f2f2; }
+        .button-group button { margin: 2px; padding: 6px 10px; font-size: 12px; }
+        .user-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; vertical-align: middle; }
+        .logout-btn { border: none; background: #dc3545; color: #fff; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+        .error-message { color: #b00020; margin: 10px 0; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="toolbar">
+        <a href="/admin">← 返回管理员控制台</a>
+        <button class="logout-btn" onclick="logout()">退出登录</button>
+    </div>
+
+    <h1>用户管理</h1>
+    <div id="errorMessage" class="error-message"></div>
+
+    <table>
+        <thead>
+        <tr>
+            <th>用户ID</th>
+            <th>头像</th>
+            <th>用户名</th>
+            <th>用户类型</th>
+            <th>状态</th>
+            <th>封禁结束时间</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody id="usersTableBody"></tbody>
+    </table>
+</div>
+
+<script>
+    window.addEventListener('DOMContentLoaded', loadUsers);
+
+    async function loadUsers() {
+        try {
+            const resp = await fetch('/api/users/all');
+            if (!resp.ok) {
+                throw new Error(resp.status === 403 ? '权限不足，请确认当前账号为管理员' : '加载失败: ' + resp.status);
+            }
+            const users = await resp.json();
+            renderUsers(users || []);
+        } catch (e) {
+            document.getElementById('errorMessage').textContent = e.message;
+        }
+    }
+
+    function renderUsers(users) {
+        const tbody = document.getElementById('usersTableBody');
+        tbody.innerHTML = '';
+
+        if (!users.length) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无用户</td></tr>';
+            return;
+        }
+
+        users.forEach(user => {
+            const tr = document.createElement('tr');
+            const isBanned = !!user.banned;
+            const isAdmin = user.type === 2;
+            const banEnd = user.banEndTime ? formatDate(user.banEndTime) : (isBanned ? '永久封禁' : 'N/A');
+
+            tr.innerHTML = `
+                <td>${user.id}</td>
+                <td>${user.avatar ? `<img class="user-avatar" src="${user.avatar}" alt="avatar">` : '无'}</td>
+                <td>${user.username}</td>
+                <td>${isAdmin ? '管理员(2)' : '普通用户(1)'}</td>
+                <td>${isBanned ? '已封禁' : '正常'}</td>
+                <td>${banEnd}</td>
+                <td class="button-group">
+                    ${!isBanned ? `<button onclick="banUser(${user.id})">封禁</button>` : `<button onclick="unbanUser(${user.id})">解封</button>`}
+                    ${!isAdmin ? `<button onclick="grantAdmin(${user.id})">设为管理员</button>` : `<button onclick="revokeAdmin(${user.id})">撤销管理员</button>`}
+                    <button onclick="resetPassword(${user.id})">重置密码</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function formatDate(timestamp) {
+        const d = new Date(timestamp);
+        return Number.isNaN(d.getTime()) ? String(timestamp) : d.toLocaleString('zh-CN');
+    }
+
+    async function banUser(userId) {
+        const banTime = prompt('请输入封禁时间 (格式: 1y2m3d4h 或 0 为永久封禁):', '0');
+        if (banTime === null) return;
+        await callUserApi(`/api/users/${userId}/ban`, 'PUT', { banTime });
+    }
+
+    async function unbanUser(userId) {
+        if (!confirm('确定要解封该用户吗？')) return;
+        await callUserApi(`/api/users/${userId}/unban`, 'PUT');
+    }
+
+    async function grantAdmin(userId) {
+        if (!confirm('确定要授予该用户管理员权限吗？')) return;
+        await callUserApi(`/api/users/${userId}/grant-admin`, 'PUT');
+    }
+
+    async function revokeAdmin(userId) {
+        if (!confirm('确定要撤销该用户管理员权限吗？')) return;
+        await callUserApi(`/api/users/${userId}/revoke-admin`, 'PUT');
+    }
+
+    async function resetPassword(userId) {
+        if (!confirm('确定要重置该用户密码吗？重置后密码将变为 000000')) return;
+        await callUserApi(`/api/users/admin/reset-password/${userId}`, 'POST');
+    }
+
+    async function callUserApi(url, method, payload) {
+        try {
+            const resp = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: payload ? JSON.stringify(payload) : undefined
+            });
+            const text = await resp.text();
+            if (!resp.ok) throw new Error(text || ('HTTP ' + resp.status));
+            alert(text || '操作成功');
+            await loadUsers();
+        } catch (e) {
+            alert('操作失败: ' + e.message);
+        }
+    }
+
+    async function logout() {
+        const resp = await fetch('/api/users/logout', { method: 'POST' });
+        const msg = await resp.text();
+        alert(msg || '已退出');
+        location.href = '/';
+    }
+</script>
+</body>
+</html>
