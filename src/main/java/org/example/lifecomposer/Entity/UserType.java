@@ -1,4 +1,4 @@
-package org.example.lifecomposer.entity;
+package org.example.lifecomposer.Entity;
 
 public final class UserType {
     private UserType() {}

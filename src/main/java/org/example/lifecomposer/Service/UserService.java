@@ -1,8 +1,8 @@
-package org.example.lifecomposer.service;
+package org.example.lifecomposer.Service;
 
 import org.example.lifecomposer.Repository.UserRepository;
-import org.example.lifecomposer.entity.User;
-import org.example.lifecomposer.entity.UserType;
+import org.example.lifecomposer.Entity.User;
+import org.example.lifecomposer.Entity.UserType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 

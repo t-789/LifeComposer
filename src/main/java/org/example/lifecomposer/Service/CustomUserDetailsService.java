@@ -1,7 +1,8 @@
-package org.example.lifecomposer.service;
+package org.example.lifecomposer.Service;
 
-import org.example.lifecomposer.entity.User;
-import org.example.lifecomposer.entity.UserType;
+import org.example.lifecomposer.Entity.User;
+import org.example.lifecomposer.Entity.UserType;
+import org.jspecify.annotations.NonNull;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -19,7 +20,7 @@ public class CustomUserDetailsService implements UserDetailsService {
     }
 
     @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+    public @NonNull UserDetails loadUserByUsername(@NonNull String username) throws UsernameNotFoundException {
         User user = userService.getByUsername(username);
         if (user == null) {
             throw new UsernameNotFoundException("用户不存在");

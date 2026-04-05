@@ -1,6 +1,6 @@
 package org.example.lifecomposer.Repository;
 
-import org.example.lifecomposer.entity.Feedback;
+import org.example.lifecomposer.Entity.Feedback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;

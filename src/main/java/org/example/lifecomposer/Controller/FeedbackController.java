@@ -1,10 +1,10 @@
-package org.example.lifecomposer.controller;
+package org.example.lifecomposer.Controller;
 
 import org.example.lifecomposer.Repository.UserRepository;
 import org.example.lifecomposer.dto.FeedbackRequest;
-import org.example.lifecomposer.entity.User;
-import org.example.lifecomposer.entity.UserType;
-import org.example.lifecomposer.service.FeedbackService;
+import org.example.lifecomposer.Entity.User;
+import org.example.lifecomposer.Entity.UserType;
+import org.example.lifecomposer.Service.FeedbackService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;

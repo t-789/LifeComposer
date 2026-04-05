@@ -1,6 +1,6 @@
 package org.example.lifecomposer.Repository;
 
-import org.example.lifecomposer.entity.User;
+import org.example.lifecomposer.Entity.User;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -57,22 +57,22 @@ public class UserRepository {
     public void migrateUserSchema() {
         // Remove legacy column from old project structure.
         // SQLite (3.35+) supports DROP COLUMN. If runtime SQLite is older, this will be ignored safely.
-        if (hasColumn("users", "credit")) {
-            try {
-                jdbcTemplate.execute("ALTER TABLE users DROP COLUMN credit");
-            } catch (Exception ignored) {
-                // Keep startup resilient on older SQLite engines.
-            }
-        }
+//        if (hasColumn("users", "credit")) {
+//            try {
+//                jdbcTemplate.execute("ALTER TABLE users DROP COLUMN credit");
+//            } catch (Exception ignored) {
+//                // Keep startup resilient on older SQLite engines.
+//            }
+//        }
 
         // Remove legacy blind type and old type=0 users. Keep only:
         // 1 = USER, 2 = ADMIN
         jdbcTemplate.update("UPDATE users SET type = 1 WHERE type IS NULL OR type IN (0, 1)");
 
-        if (!hasColumn("users", "password_hash") && hasColumn("users", "password")) {
-            jdbcTemplate.execute("ALTER TABLE users ADD COLUMN password_hash TEXT");
-            jdbcTemplate.update("UPDATE users SET password_hash = password WHERE password_hash IS NULL");
-        }
+//        if (!hasColumn("users", "password_hash") && hasColumn("users", "password")) {
+//            jdbcTemplate.execute("ALTER TABLE users ADD COLUMN password_hash TEXT");
+//            jdbcTemplate.update("UPDATE users SET password_hash = password WHERE password_hash IS NULL");
+//        }
 
         if (!hasColumn("users", "is_banned")) {
             jdbcTemplate.execute("ALTER TABLE users ADD COLUMN is_banned BOOLEAN NOT NULL DEFAULT 0");

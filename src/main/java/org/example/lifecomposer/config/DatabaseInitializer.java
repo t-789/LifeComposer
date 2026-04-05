@@ -3,8 +3,8 @@ package org.example.lifecomposer.config;
 import jakarta.annotation.PostConstruct;
 import org.example.lifecomposer.Repository.FeedbackRepository;
 import org.example.lifecomposer.Repository.UserRepository;
-import org.example.lifecomposer.entity.User;
-import org.example.lifecomposer.entity.UserType;
+import org.example.lifecomposer.Entity.User;
+import org.example.lifecomposer.Entity.UserType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 

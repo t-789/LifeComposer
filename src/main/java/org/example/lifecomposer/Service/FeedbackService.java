@@ -1,7 +1,7 @@
-package org.example.lifecomposer.service;
+package org.example.lifecomposer.Service;
 
 import org.example.lifecomposer.Repository.FeedbackRepository;
-import org.example.lifecomposer.entity.Feedback;
+import org.example.lifecomposer.Entity.Feedback;
 import org.springframework.stereotype.Service;
 
 import java.sql.Timestamp;

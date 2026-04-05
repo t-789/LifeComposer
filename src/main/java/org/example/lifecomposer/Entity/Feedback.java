@@ -1,4 +1,4 @@
-package org.example.lifecomposer.entity;
+package org.example.lifecomposer.Entity;
 
 import lombok.Getter;
 import lombok.Setter;
