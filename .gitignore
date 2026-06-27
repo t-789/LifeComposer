@@ -1,0 +1,34 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build outputs
+LifeComposer/target/
+LifeComposer/*.class
+
+# Runtime database
+LifeComposer/data.db
+LifeComposer/data-*.db
+
+# Environment / secrets
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.jks
+
+# Logs
+*.log
+
+# Agent evidence (runtime artifacts, not planning artifacts)
+.sisyphus/evidence/
+
+# Maven wrapper download cache (downloaded on first use)
+.mvn/wrapper/maven-wrapper.jar
