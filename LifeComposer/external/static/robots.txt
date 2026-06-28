@@ -1,0 +1,15 @@
+User-agent: *
+Disallow: /admin
+Disallow: /api
+Disallow: /actuator
+Disallow: /index
+Disallow: /user
+Disallow: /register
+Disallow: /login
+Disallow: /forum
+Disallow: /feedback
+Disallow: /point
+Disallow: /security
+Disallow: /ban_time_set
+Disallow: /admin_main
+Crawl-delay: 10

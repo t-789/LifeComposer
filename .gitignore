@@ -26,6 +26,7 @@ LifeComposer/data-*.db
 
 # Logs
 *.log
+logs/
 
 # Agent evidence (runtime artifacts, not planning artifacts)
 .sisyphus/evidence/

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>反馈管理</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1240px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,.08); }
+        h1 { text-align: center; color: #333; }
+        .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .logout-btn { border: none; background: #dc3545; color: #fff; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+        th { background: #f2f2f2; }
+        .filter-section { margin: 12px 0; padding: 12px; border: 1px solid #ddd; border-radius: 6px; background: #f9f9f9; }
+        .filter-section button { margin-right: 8px; padding: 6px 10px; }
+        .resolved { background: #d4edda; }
+        .unresolved { background: #f8d7da; }
+        .system-error { background: #fff3cd; }
+        .detail-content { max-height: 100px; overflow-y: auto; white-space: pre-wrap; }
+        .stack-trace { max-height: 200px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 12px; background: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; }
+        .toggle-details { cursor: pointer; color: #007bff; text-decoration: underline; margin-top: 6px; }
+        .error-message { color: #b00020; margin: 10px 0; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="toolbar">
+        <a href="/admin">← 返回管理员控制台</a>
+        <button class="logout-btn" onclick="logout()">退出登录</button>
+    </div>
+
+    <h1>反馈管理</h1>
+
+    <div class="filter-section">
+        <label>过滤条件:</label>
+        <button onclick="loadFeedback('all')">全部</button>
+        <button onclick="loadFeedback('system')">系统错误</button>
+        <button onclick="loadFeedback('user')">用户反馈</button>
+        <button onclick="loadFeedbackByStatus(true)">已解决</button>
+        <button onclick="loadFeedbackByStatus(false)">未解决</button>
+        <button onclick="loadFeedback('all')">刷新</button>
+    </div>
+
+    <div id="errorMessage" class="error-message"></div>
+
+    <table>
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>用户</th>
+            <th>类型</th>
+            <th>内容</th>
+            <th>URL</th>
+            <th>时间</th>
+            <th>状态</th>
+            <th>解决人</th>
+            <th>解决时间</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody id="feedbackTableBody"></tbody>
+    </table>
+</div>
+
+<script>
+    window.addEventListener('DOMContentLoaded', () => loadFeedback('all'));
+
+    async function loadFeedback(filter) {
+        let url = '/api/feedback/all';
+        if (filter === 'system' || filter === 'user') {
+            url = '/api/feedback/type/' + filter;
+        }
+        try {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error(resp.status === 403 ? '权限不足，请确认您是管理员' : '服务器错误: ' + resp.status);
+            const feedbacks = await resp.json();
+            setError('');
+            renderFeedbackTable(feedbacks || []);
+        } catch (e) {
+            setError('获取反馈列表失败: ' + e.message);
+        }
+    }
+
+    async function loadFeedbackByStatus(resolved) {
+        try {
+            const resp = await fetch('/api/feedback/all');
+            if (!resp.ok) throw new Error(resp.status === 403 ? '权限不足，请确认您是管理员' : '服务器错误: ' + resp.status);
+            const feedbacks = await resp.json();
+            const filtered = (feedbacks || []).filter(f => !!f.resolved === resolved);
+            setError('');
+            renderFeedbackTable(filtered);
+        } catch (e) {
+            setError('获取反馈列表失败: ' + e.message);
+        }
+    }
+
+    function renderFeedbackTable(feedbacks) {
+        const tbody = document.getElementById('feedbackTableBody');
+        tbody.innerHTML = '';
+
+        if (!feedbacks.length) {
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无反馈数据</td></tr>';
+            return;
+        }
+
+        feedbacks.forEach(feedback => {
+            const row = document.createElement('tr');
+            row.className = feedback.resolved ? 'resolved' : 'unresolved';
+            if (feedback.type === 'system') row.classList.add('system-error');
+
+            const content = feedback.content || '';
+            let contentCell = `<div class="detail-content">${escapeHtml(content.substring(0, 50))}${content.length > 50 ? '...' : ''}</div>`;
+            let fullContentElement = '';
+            if (content.length > 50) {
+                fullContentElement = `<div class="detail-content" style="display:none;">${escapeHtml(content)}</div>`;
+                contentCell += `<div class="toggle-details" onclick="toggleDetails(this)">显示全部</div>`;
+            }
+
+            let stackTraceElement = '';
+            if (feedback.stackTrace) {
+                stackTraceElement = `<div class="stack-trace" style="display:none;">${escapeHtml(feedback.stackTrace)}</div>`;
+                contentCell += `<div class="toggle-details" onclick="toggleStackTrace(this)">显示堆栈</div>`;
+            }
+
+            row.innerHTML = `
+                <td>${feedback.id}</td>
+                <td>${escapeHtml(feedback.username || 'Anonymous')}${feedback.userId !== -1 && feedback.userId != null ? '(' + feedback.userId + ')' : ''}</td>
+                <td>${feedback.type === 'system' ? '系统错误' : '用户反馈'}</td>
+                <td>${contentCell}${fullContentElement}${stackTraceElement}</td>
+                <td>${escapeHtml(feedback.url || 'N/A')}</td>
+                <td>${formatDate(feedback.createTime)}</td>
+                <td>${feedback.resolved ? '已解决' : '未解决'}</td>
+                <td>${escapeHtml(feedback.resolvedBy || 'N/A')}</td>
+                <td>${feedback.resolvedTime ? formatDate(feedback.resolvedTime) : 'N/A'}</td>
+                <td>
+                    ${!feedback.resolved
+                        ? `<button onclick="updateResolved(${feedback.id}, true)">标记为已解决</button>`
+                        : `<button onclick="updateResolved(${feedback.id}, false)">标记为未解决</button>`}
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    function toggleDetails(element) {
+        const parent = element.parentNode;
+        const detailDivs = parent.querySelectorAll('.detail-content');
+        const fullContentDiv = detailDivs[1] || detailDivs[0];
+        if (!fullContentDiv) return;
+        if (fullContentDiv.style.display === 'none') {
+            fullContentDiv.style.display = 'block';
+            element.textContent = '收起';
+        } else {
+            fullContentDiv.style.display = 'none';
+            element.textContent = '显示全部';
+        }
+    }
+
+    function toggleStackTrace(element) {
+        const parent = element.parentNode;
+        const stackTraceDiv = parent.querySelector('.stack-trace');
+        if (!stackTraceDiv) return;
+        if (stackTraceDiv.style.display === 'none') {
+            stackTraceDiv.style.display = 'block';
+            element.textContent = '隐藏堆栈';
+        } else {
+            stackTraceDiv.style.display = 'none';
+            element.textContent = '显示堆栈';
+        }
+    }
+
+    async function updateResolved(feedbackId, resolved) {
+        if (!confirm(`确定要将反馈 #${feedbackId} 标记为${resolved ? '已' : '未'}解决吗？`)) return;
+        try {
+            const resp = await fetch(`/api/feedback/${feedbackId}/resolve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resolved })
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+            alert(data.message || '操作成功');
+            await loadFeedback('all');
+        } catch (e) {
+            setError('更新反馈状态失败: ' + e.message);
+            alert('操作失败: ' + e.message);
+        }
+    }
+
+    function formatDate(timestamp) {
+        if (!timestamp) return 'N/A';
+        const d = new Date(timestamp);
+        return Number.isNaN(d.getTime()) ? String(timestamp) : d.toLocaleString('zh-CN');
+    }
+
+    function setError(msg) {
+        document.getElementById('errorMessage').textContent = msg || '';
+    }
+
+    function escapeHtml(str) {
+        return String(str)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    async function logout() {
+        const resp = await fetch('/api/users/logout', { method: 'POST' });
+        const msg = await resp.text();
+        alert(msg || '已退出');
+        location.href = '/';
+    }
+</script>
+</body>
+</html>

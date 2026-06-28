@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Release Notes</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 15px;
+            margin-top: 0;
+        }
+        h2 {
+            color: #3498db;
+            margin-top: 30px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        h3 {
+            color: #27ae60;
+            margin-top: 20px;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        .version {
+            text-align: center;
+            font-size: 1.3em;
+            color: #7f8c8d;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .date {
+            text-align: center;
+            color: #95a5a6;
+            margin-bottom: 30px;
+            font-style: italic;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .back-link {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            color: #3498db;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .api-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: #3498db;
+            text-decoration: none;
+            padding: 8px 15px;
+            border: 1px solid #3498db;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+        .api-link:hover {
+            background-color: #3498db;
+            color: white;
+        }
+        .week-header {
+            background-color: #f1f8ff;
+            padding: 20px;
+            border-left: 4px solid #3498db;
+            margin-bottom: 25px;
+        }
+        .week-title {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        .feature-list, .improvement-list, .fix-list, .tech-list, .known-issues-list {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        .feature-list h3, .improvement-list h3, .fix-list h3, .tech-list h3, .known-issues-list h3 {
+            margin-top: 0;
+        }
+        .endpoint-list {
+            background-color: #e8f4fc;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .new-badge {
+            background-color: #e74c3c;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.7em;
+            vertical-align: top;
+            margin-left: 10px;
+        }
+        .updated-badge {
+            background-color: #f39c12;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.7em;
+            vertical-align: top;
+            margin-left: 10px;
+        }
+        .timestamp {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        .critical-issue {
+            border-left: 4px solid #e74c3c;
+            padding-left: 15px;
+            background-color: #fdf2f2;
+        }
+        .major-issue {
+            border-left: 4px solid #f39c12;
+            padding-left: 15px;
+            background-color: #fff9f2;
+        }
+        .minor-issue {
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+            background-color: #f2f8ff;
+        }
+        .issue-severity {
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.8em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: white;
+        }
+        .severity-critical {
+            background-color: #e74c3c;
+        }
+        .severity-major {
+            background-color: #f39c12;
+        }
+        .severity-minor {
+            background-color: #3498db;
+        }
+    </style>
+</head>
+<body>
+    <h1>项目发布说明</h1>
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 9</h2>
+            <div class="version">Version 0.0.4.2</div>
+            <div class="date">December 14, 2025</div>
+        </div>
+        <div class="section">
+            <div class="feature-list">
+                <h3>新功能</h3>
+                <ul>
+                    <li>用户头像现在可以用base64编码上传</li>
+                    <li>创建帖子的时候可以一并上传图片</li>
+                    <li>添加了非常基础的地图
+                        <ul>
+                            <li>调用的高德地图api</li>
+                            <li>可以通过/api/point/active获取标点</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+            <div class="improvement-list">
+                <h3>代码优化</h3>
+                <ul>
+                    <li>进一步增加了更多的错误处理，防止日志被几百行TraceBack淹没</li>
+                    <li>包装了图片上传机制</li>
+                    <li>添加了图片路径缓冲机制，减少调用数据库次数</li>
+                    <li>Other bug fixes and improvements that I have forgotten</li>
+                </ul>
+            </div>
+            <a href="/apiList.txt" class="api-link" target="_blank">查看完整API文档 (apiList.txt)</a>
+        </div>
+    </div>
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 8</h2>
+            <div class="version">Version 0.0.4.1</div>
+            <div class="date">December 6, 2025</div>
+        </div>
+        <div class="section">
+            <div class="feature-list">
+                <h3>新功能</h3>
+                <ul>
+                    <li>帖子现在可以附带照片</li>
+                    <li>添加了论坛搜索帖子功能</li>
+                    <li>添加了标点同时发帖的功能</li>
+                </ul>
+            </div>
+            <div class="improvement-list">
+                <h3>代码优化</h3>
+                <ul>
+                    <li>增加了更多的错误处理，防止日志被几百行TraceBack淹没</li>
+                </ul>
+            </div>
+            <a href="/apiList.txt" class="api-link" target="_blank">查看完整API文档 (apiList.txt)</a>
+        </div>
+    </div>
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 7</h2>
+            <div class="version">Version 0.0.4</div>
+            <div class="date">December 2, 2025</div>
+        </div>
+        <div class="section">
+            <div class="improvement-list">
+                <h3>代码优化</h3>
+                <ul>
+                    <li>增加了与前端的兼容性</li>
+                    <li>增加了register-with-json接口，同时头像改为base64编码，便于传输。</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 6</h2>
+            <div class="version">Version 0.0.3.5b</div>
+            <div class="date">November 28, 2025</div>
+        </div>
+        <div class="section">
+            <div class="improvement-list">
+                <h3>代码优化</h3>
+                <ul>
+                    <li>将权限管理由白名单改成了黑名单。</li>
+                    <li>添加了通用的/front接口，便于前端进行调试</li>
+                    <li>对现有代码进行了一定调整以实现与前端更流畅的交互</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 5b</h2>
+            <div class="version">Version 0.0.3.5</div>
+            <div class="date">November 23, 2025</div>
+        </div>
+        <div class="section">
+            <div class="feature-list">
+                <h3>新功能</h3>
+                <ul><li>添加了用户点赞、评论、收藏功能</li></ul>
+            </div>
+            <div class="improvement-list">
+                <h3>代码优化</h3>
+                <ul>
+                    <li>为所有的帖子添加了点赞、评论、收藏数字统计</li>
+                    <li>添加了更多错误自定义处理，添加了bot屏蔽功能</li>
+                </ul>
+            </div>
+            <div class="fix-list">
+                <h3>修复</h3>
+                <ul>
+                    <li>修复了因cors而导致本地网页无法与服务器交互</li>
+                </ul>
+            </div>
+            <div class="known-issues-list">
+                <h3>已知问题或未实现功能</h3>
+                <div class="major-issue">
+                    <p><span class="issue-severity severity-major">重要</span> <strong>个人主页</strong></p>
+                    <p>现在已经有返回用户点赞和收藏帖子列表的借口了，但是还没有实现个人主页</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 5a</h2>
+            <div class="version">Version 0.0.3.4b(hot fix)</div>
+            <div class="date">November 21, 2025</div>
+        </div>
+        <div class="section">
+            <div class="feature-list">
+            </div>
+            <div class="improvement-list">
+                <h3>代码优化</h3>
+                <ul>
+                    <li>扩展了注册用户的方式</li>
+                    <li>添加了更多错误自定义处理</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 4</h2>
+            <div class="version">Version 0.0.3.4</div>
+            <div class="date">November 9, 2025</div>
+        </div>
+        <div class="section">
+            <div class="feature-list">
+            </div>
+            <div class="improvement-list">
+                <h3>代码健壮性优化</h3>
+                <ul>
+                    <li>进行了代码健壮性优化，如防路径注入、添加Spring Boot的@Getter，@Setter注入等</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 3b</h2>
+            <div class="version">Version 0.0.3.3</div>
+            <div class="date">November 1, 2025</div>
+        </div>
+        <div class="section">
+            <div class="feature-list">
+                <h3>新功能</h3>
+                <h4>统计信息</h4>
+                <ul>
+                    <li>添加了统计信息接口，返回用户数、帖子数、点位数</li>
+                </ul>
+            </div>
+        </div>
+        <div class="section">
+            <div class="improvement-list">
+                <h3>功能改进</h3>
+                <h4>系统</h4>
+                <ul>
+                    <li>完善了系统错误反馈功能</li>
+                </ul>
+                <h4>用户</h4>
+                <ul>
+                    <li>提供了个人主页的接口，返回发帖数、点位数、积分数</li>
+                </ul>
+                <h4>点位</h4>
+                <ul>
+                    <li>添加了按照距离修改点位</li>
+                    <li>为点位添加了可选的图片描述接口</li>
+                </ul>
+                <h4>小优化</h4>
+                <ul>
+                    <li>完善了日志输出</li>
+                    <li>加了一个网站的图标</li>
+                    <li>后端文件整理</li>
+                    <li>优化了日志输出格式</li>
+                </ul>
+            </div>
+        </div>
+        <div class="section">
+            <div class="fix-list">
+                <h3>问题修复</h3>
+                <ul>
+                    <li>修复了系统报错不显示堆栈信息的问题</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 3a</h2>
+            <div class="version">Version 0.0.3.2</div>
+            <div class="date">October 27, 2025</div>
+        </div>
+        <div class="section">
+            <div class="feature-list">
+                <h3>新增功能</h3>
+                <h4>用户头像</h4>
+                <ul>
+                    <li>为用户添加头像，用户头像存储在数据库中</li>
+                    <li>如果没有头像，则使用默认头像（默认头像为default.jpg）</li>
+                    <li>用户头像存储在服务器的static/avatar目录下</li>
+                    <li>提供了用户修改头像的接口</li>
+                </ul>
+                <h4>密保信息<span class="new-badge">NEW</span></h4>
+                <ul>
+                    <li>为每个用户记录密保信息，以供重置密码</li>
+                    <li>密保信息存储在数据库中，管理员可以编辑</li>
+                </ul>
+                <a href="/curl.txt" class="api-link" target="_blank">查看完整API文档 (curl.txt)</a>
+            </div>
+        </div>
+        <div class="section">
+            <div class="fix-list">
+                <h3>问题修复</h3>
+                <ul>
+                    <li>修复了登录界面在账号或密码错误的时候显示true</li>
+                    <li>修复了非管理员访问管理员页面时显示404而非403</li>
+                </ul>
+            </div>
+        </div>
+
+    </div>
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 2b</h2>
+            <div class="version">Version 0.0.3.1</div>
+            <div class="date">October 26, 2025</div>
+        </div>
+
+        <div class="section">
+            <div class="feature-list">
+                <h3>新增功能</h3>
+                <h4>DeepSeek接入<span class="new-badge">NEW</span></h4>
+                <ul>
+                    <li>DeepSeek加入项目</li>
+                    <li>现在已开放对话api，调用方法详见curl.txt尾部</li>
+                </ul>
+                <a href="/curl.txt" class="api-link" target="_blank">查看完整API文档 (curl.txt)</a>
+            </div>
+        </div>
+        <div class="section">
+            <h5>AI植入是临时起意的，bug是一点没修的，下周的事情下周再说吧。下班！</h5>
+        </div>
+    </div>
+    
+    <!-- 第二周周报 -->
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 2a</h2>
+            <div class="version">Version 0.0.3</div>
+            <div class="date">October 25, 2025</div>
+        </div>
+
+        <div class="section">
+            <div class="feature-list">
+                <h3>新增功能</h3>
+                
+                <h4>点位确认功能</h4>
+                <ul>
+                    <li>添加了点位确认功能，允许用户确认其他用户创建的点位存在</li>
+                    <li>用户不能确认自己创建的点位</li>
+                    <li>添加了confirm_count字段用于跟踪点位被确认的次数</li>
+                    <li>新增API端点：POST /api/points/{pointId}/confirm</li>
+                </ul>
+                
+                <h4>点位类型映射</h4>
+                <ul>
+                    <li>实现了点位类型映射功能，允许管理员自定义类型ID对应的名称</li>
+                    <li>添加了类型映射管理界面，可在点位管理页面直接设置类型映射</li>
+                    <li>点位列表会自动显示类型名称而不是数字ID</li>
+                    <li>新增API端点：
+                        <ul>
+                            <li>POST /api/points/type-map (管理员)</li>
+                            <li>GET /api/points/type-map</li>
+                        </ul>
+                    </li>
+                </ul>
+                
+                <h4>反馈管理系统</h4>
+                <ul>
+                    <li>新增完整的反馈管理系统，包括用户反馈和系统错误自动收集</li>
+                    <li>用户可以主动提交反馈</li>
+                    <li>系统错误会自动捕获并记录到反馈系统</li>
+                    <li>新增反馈管理界面，管理员可以查看和处理所有反馈</li>
+                    <li>反馈分为用户反馈和系统错误两类，支持按类型和解决状态筛选</li>
+                    <li>新增API端点：
+                        <ul>
+                            <li>POST /api/feedback/submit</li>
+                            <li>POST /api/feedback/system-error</li>
+                            <li>GET /api/feedback/all (管理员)</li>
+                            <li>GET /api/feedback/type/{type} (管理员)</li>
+                            <li>POST /api/feedback/{id}/resolve (管理员)</li>
+                        </ul>
+                    </li>
+                </ul>
+                
+                <h4>管理员重置密码功能</h4>
+                <ul>
+                    <li>新增管理员重置用户密码功能</li>
+                    <li>管理员可以将任意用户密码重置为默认密码"000000"</li>
+                    <li>在用户管理界面添加了重置密码按钮</li>
+                    <li>新增API端点：POST /api/users/admin/reset-password/{userId}</li>
+                </ul>
+
+                <h4>测试用前端 <span class="new-badge">NEW</span></h4>
+                <ul>
+                    <li>新增测试用前端，用于测试功能</li>
+                    <li>在页面可进行目前支持的所有操作</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="improvement-list">
+                <h3>功能改进</h3>
+                
+                <h4>点位管理</h4>
+                <ul>
+                    <li>为点位表添加了level字段，用于表示风险等级（1-低，2-中，3-高）</li>
+                    <li>优化了点位管理界面，添加了返回首页链接</li>
+                </ul>
+                
+                <h4>管理界面</h4>
+                <ul>
+                    <li>为所有管理界面添加了返回首页链接</li>
+                    <li>修复了错误页面返回首页链接错误的问题</li>
+                    <li>在管理员控制台添加了反馈管理的导航链接</li>
+                </ul>
+                
+                <h4>API文档</h4>
+                <ul>
+                    <li>更新了curl.txt文档，包含了所有新增功能的API使用示例</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="tech-list">
+                <h3>技术更新</h3>
+                <ul>
+                    <li>新增Feedback实体类、Repository、Service和Controller</li>
+                    <li>创建了反馈管理界面(feedback_management.html)</li>
+                    <li>为点位相关类添加了confirm_count和level字段支持</li>
+                    <li>实现了类型映射的存储和查询功能</li>
+                    <li>增强了错误处理机制，系统错误会自动记录到反馈系统</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="known-issues-list">
+                <h3>已知问题或未实现功能</h3>
+                <div class="critical-issue">
+                    <p><span class="issue-severity severity-critical">严重</span> <strong>普通用户进入管理员页面时显示404而非登录页面或403错误（FIXED v0.0.3.2）</strong></p>
+                    <p>我怀疑跟权限管理或跳转错误有关，下周修复</p>
+                </div>
+                <div class="major-issue">
+                    <p><span class="issue-severity severity-major">重要</span> <strong>反馈系统对系统提交的错误似乎无法记录（FIXED v0.0.3.3）</strong></p>
+                    <p>原因未知，下周尝试修复</p>
+                </div>
+                <div class="major-issue">
+                    <p><span class="issue-severity severity-major">重要</span> <strong>按照定位提供点位 （ADDED v0.0.3.3）</strong></p>
+                    <p>目前系统中并没有提供按照定位提供点位的功能。预计下个版本添加</p>
+                </div>
+                <div class="major-issue">
+                    <p><span class="issue-severity severity-major">重要</span> <strong>管理员登录页面（FIXED v0.0.3.2）</strong></p>
+                    <p>在登录的时候输入错误的密码返回的是true而不是账号或密码错误</p>
+                </div>
+                <div class="minor-issue">
+                    <p><span class="issue-severity severity-minor">一般</span> <strong>个人首页 (ADDED v0.0.3.3)</strong></p>
+                    <p>目前没有开发个个人首页功能。等有空闲精力的时候开发</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 第一周周报 -->
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">Weekly 1</h2>
+            <div class="version">Version 0.0.2.1</div>
+            <div class="date">October 19, 2025</div>
+        </div>
+        
+        <div class="section">
+            <div class="feature-list">
+                <h3>新增功能</h3>
+                
+                <h4>论坛系统 <span class="new-badge">NEW</span></h4>
+                <ul>
+                    <li>添加了完整的论坛功能，用户可以创建和查看帖子</li>
+                    <li>实现了论坛帖子的增删查功能</li>
+                    <li>管理员可以删除不当帖子</li>
+                    <li>支持按用户筛选查看帖子</li>
+                </ul>
+                
+                <h4>管理界面重构</h4>
+                <ul>
+                    <li>将原有的复合式管理员页面拆分为三个独立的管理页面：
+                        <ul>
+                            <li>用户管理 (admin/user)</li>
+                            <li>点位管理 (admin/point)</li>
+                            <li>论坛管理 (admin/forum)</li>
+                        </ul>
+                    </li>
+                    <li>添加了新的管理员控制台主页，提供导航到各个管理模块的链接</li>
+                    <li>优化了各管理页面的布局和用户体验</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="improvement-list">
+                <h3>功能改进</h3>
+                
+                <h4>论坛管理</h4>
+                <ul>
+                    <li>改进了论坛帖子列表的显示方式，对长标题和内容进行截断显示</li>
+                    <li>添加了创建新帖子的功能到论坛管理页面</li>
+                    <li>增加了查看帖子详情的功能</li>
+                </ul>
+                
+                <h4>API权限调整</h4>
+                <ul>
+                    <li>获取论坛帖子列表不再需要管理员权限，普通用户即可查看</li>
+                    <li>删除论坛帖子仍需要管理员权限，确保内容安全</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="fix-list">
+                <h3>问题修复</h3>
+                <ul>
+                    <li>修复了论坛帖子中用户名显示为null的问题</li>
+                    <li>修复了论坛帖子内容过长导致表格显示不美观的问题</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="tech-list">
+                <h3>技术更新</h3>
+                <ul>
+                    <li>添加了ForumService服务类，遵循项目现有的服务层设计模式</li>
+                    <li>创建了ForumRequest DTO用于处理论坛帖子创建请求</li>
+                    <li>更新了API文档(curl.txt)，包含了所有论坛相关API的使用说明</li>
+                    <li>增强了ForumController，提供了完整的RESTful API端点</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="endpoint-list">
+                <h3>API端点</h3>
+                
+                <h4>论坛相关</h4>
+                <ul>
+                    <li>POST /api/forum/create - 创建新帖子</li>
+                    <li>GET /api/forum/all - 获取所有帖子</li>
+                    <li>GET /api/forum/user/{userId} - 获取指定用户的帖子</li>
+                    <li>GET /api/forum/{forumId} - 获取特定帖子详情</li>
+                    <li>DELETE /api/forum/{forumId} - 删除帖子(仅管理员)</li>
+                </ul>
+                
+                <h4>管理页面</h4>
+                <ul>
+                    <li>GET /admin - 管理员控制台主页</li>
+                    <li>GET /admin/user - 用户管理页面</li>
+                    <li>GET /admin/point - 点位管理页面</li>
+                    <li>GET /admin/forum - 论坛管理页面</li>
+                </ul>
+                
+                <h4>API文档</h4>
+                <a href="/curl.txt" class="api-link" target="_blank">查看完整API文档 (curl.txt)</a>
+            </div>
+        </div>
+    </div>
+    
+    <footer>
+        <p>此页面每周更新，记录项目的重要变更和功能发布</p>
+        <p>下次更新时间: <span class="timestamp">2025年11月1日</span></p>
+    </footer>
+    
+    <a href="../" class="back-link">← 返回首页</a>
+</body>
+</html>

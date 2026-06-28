@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Release Notes</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 15px;
+            margin-top: 0;
+        }
+        h2 {
+            color: #3498db;
+            margin-top: 30px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        h3 {
+            color: #27ae60;
+            margin-top: 20px;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        .version {
+            text-align: center;
+            font-size: 1.3em;
+            color: #7f8c8d;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .date {
+            text-align: center;
+            color: #95a5a6;
+            margin-bottom: 30px;
+            font-style: italic;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .back-link {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            color: #3498db;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .api-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: #3498db;
+            text-decoration: none;
+            padding: 8px 15px;
+            border: 1px solid #3498db;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+        .api-link:hover {
+            background-color: #3498db;
+            color: white;
+        }
+        .week-header {
+            background-color: #f1f8ff;
+            padding: 20px;
+            border-left: 4px solid #3498db;
+            margin-bottom: 25px;
+        }
+        .week-title {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        .feature-list, .improvement-list, .fix-list, .tech-list, .known-issues-list {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        .feature-list h3, .improvement-list h3, .fix-list h3, .tech-list h3, .known-issues-list h3 {
+            margin-top: 0;
+        }
+        .endpoint-list {
+            background-color: #e8f4fc;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .new-badge {
+            background-color: #e74c3c;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.7em;
+            vertical-align: top;
+            margin-left: 10px;
+        }
+        .updated-badge {
+            background-color: #f39c12;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.7em;
+            vertical-align: top;
+            margin-left: 10px;
+        }
+        .timestamp {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin: 15px 0;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            border-left: 3px solid #3498db;
+        }
+        .stat-card .num {
+            font-size: 1.6em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .stat-card .label {
+            color: #7f8c8d;
+            font-size: 0.85em;
+        }
+        code {
+            background: #f0f4f8;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 0.9em;
+            color: #c7254e;
+        }
+    </style>
+</head>
+<body>
+    <h1>LifeComposer 发布说明</h1>
+    <div class="date" style="margin-top:-10px; margin-bottom:25px;">本页面记录项目的重要变更和功能发布</div>
+
+    <!-- 
+      ============================================================
+      维护约定：新版本在此注释下方、现有版本容器之前插入
+      每个新版本是一个 <div class="container"> 容器块
+      顺序：新版本在顶部，旧版本依次往下（最新在最上）
+      版本命名规则见本页面已有的 Version 标签
+      ============================================================
+    -->
+
+    <!-- ========== v0.0.2 ========== -->
+    <div class="container">
+        <h1>v0.0.2 — AI 对话原型与日志系统</h1>
+        <p><em>2026 年 6 月 28 日</em></p>
+
+        <div class="stats-grid">
+            <div class="stat-item"><span class="stat-num">5</span><span class="stat-label">日志级别</span></div>
+            <div class="stat-item"><span class="stat-num">3</span><span class="stat-label">新增 API</span></div>
+            <div class="stat-item"><span class="stat-num">1</span><span class="stat-label">新增数据库表</span></div>
+            <div class="stat-item"><span class="stat-num">2</span><span class="stat-label">新增页面</span></div>
+            <div class="stat-item"><span class="stat-num">6</span><span class="stat-label">缺陷修复</span></div>
+            <div class="stat-item"><span class="stat-num">80</span><span class="stat-label">自动化测试</span></div>
+        </div>
+
+        <h2>日志系统</h2>
+        <p>配置了 Log4j2（<code>log4j2-spring.xml</code>），支持 ConsoleAppender（彩色控制台输出）和 RollingFileAppender（<code>logs/lifecomposer.log</code>，10MB 滚动，最多 10 个归档文件）。</p>
+        <ul>
+            <li><strong>五级日志</strong>：DEBUG、INFO、WARN、ERROR、FATAL — 包级别自定义（<code>org.example.lifecomposer</code> → <strong>INFO</strong>，<code>org.springframework</code> → INFO，启动日志更简洁）</li>
+            <li><strong>LogHelper 工具类</strong>：<code>logError()</code> 和 <code>logFatal()</code> 方法，自动将 ERROR/FATAL 日志记录到反馈系统（<code>feedback</code> 表），支持空反馈服务保护（不传播异常）</li>
+            <li><strong>QA + LLM 降级路径覆盖</strong>：QA 请求异常触发 LogHelper；<code>OpenAiCompatibleLlmClient</code> 的 HTTP 非 2xx、响应解析失败、网络超时 3 种 fallback 路径自动写入 <code>LOG.warn</code>，不再静默降级</li>
+            <li><strong>控制器日志</strong>：关键入口点添加 INFO 日志（如目标创建）</li>
+        </ul>
+
+        <h2>AI 对话原型</h2>
+        <p>新增聊天测试页面 <code>/front/chat_test</code>，提供微信风格的对话界面。</p>
+        <ul>
+            <li><strong>WeChat 风格 UI</strong>：绿色用户气泡（右对齐）+ 白色 AI 气泡（左对齐），扁平简洁设计，移动端适配</li>
+            <li><strong>对话历史持久化</strong>：每条消息自动保存到 <code>chat_messages</code> 表（按 <code>create_time, id</code> 双键排序，顺序稳定）</li>
+            <li><strong>真实多轮上下文</strong>：<code>OpenAiCompatibleLlmClient.buildPayload()</code> 在 system prompt 与当前 user 消息之间插入完整 conversationHistory，Ollama 实际接收并理解历史对话</li>
+            <li><strong>上下文清除</strong>：一键清除所有对话记录，需确认</li>
+            <li><strong>独立 LLM 配置</strong>：<code>llm.useCases.chat</code> 使用 Ollama 本地模型（<code>lfm2.5:8b</code>），与生产 QA 功能完全隔离；<code>isAvailable()</code> 对 Ollama provider 直接返回 <code>true</code>（本地不需 API key）</li>
+            <li><strong>Security 保护</strong>：<code>/api/chat/**</code> 已纳入 <code>WebSecurityConfig</code> 的 <code>authenticated()</code> 链，未登录请求由 Spring Security 拦截返回 403</li>
+        </ul>
+
+        <h2>路由 &amp; 配置</h2>
+        <ul>
+            <li><strong>发布说明页面</strong>：<code>/release-notes</code> 路由上线</li>
+            <li><strong>认证保护</strong>：<code>/front/**</code> 和 <code>/api/chat/**</code> 需要登录</li>
+            <li><strong>首页链接清理</strong>：移除失效链接，添加"AI 对话测试"入口</li>
+            <li><strong>run.sh 全 useCase 管理</strong>：启动脚本通过 bash 间接扩展遍历 5 个 useCase（qa/planning/profile/sql/chat），将 <code>LLM_*_PROVIDER/BASE_URL/MODEL/ENABLED</code> 环境变量注入为 <code>-D</code> 系统属性；LLM_CHAT_* 变量现在生效；chat useCase 默认 enabled=true</li>
+        </ul>
+
+        <h2>稳定性与测试</h2>
+        <ul>
+            <li><strong>Java 25 兼容</strong>：pom.xml 添加 <code>&lt;argLine&gt;-XX:+EnableDynamicAgentLoading&lt;/argLine&gt;</code>，解决 Mockito inline-mock-maker 在 Java 25 下的 Byte Buddy self-attach 失败</li>
+            <li><strong>缺陷修复 6 项</strong>（Codex review 反馈）：测试自 attach、多轮上下文传递、run.sh 配置接管、LLM 降级日志、Security 权限表、历史排序稳定性</li>
+            <li>总计 <strong>80 个测试，0 失败</strong>（原有 68 + 6 LogHelperTest + 6 ChatControllerTest）</li>
+        </ul>
+
+        <h2>API 端点一览</h2>
+        <ul>
+            <li><code>POST /api/chat/send</code> — 发送消息（需登录，Security 403）</li>
+            <li><code>GET /api/chat/history</code> — 获取对话历史（需登录）</li>
+            <li><code>DELETE /api/chat/context</code> — 清除上下文（需登录）</li>
+        </ul>
+    </div>
+
+    <!-- ========== v0.0.1 ========== -->
+    <div class="container">
+        <div class="week-header">
+            <h2 class="week-title">v0.0.1 — Initial Backend Server Foundation</h2>
+            <div class="version">Version 0.0.1</div>
+            <div class="date">June 27, 2026</div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card"><div class="num">68</div><div class="label">自动化测试</div></div>
+            <div class="stat-card"><div class="num">5</div><div class="label">新增数据表</div></div>
+            <div class="stat-card"><div class="num">12</div><div class="label">新增 API</div></div>
+            <div class="stat-card"><div class="num">4</div><div class="label">最终审查全过</div></div>
+        </div>
+
+        <div class="section">
+            <div class="feature-list">
+                <h3>新功能 <span class="new-badge">NEW</span></h3>
+
+                <h4>用户画像 API</h4>
+                <ul>
+                    <li><code>GET /api/profiles/me</code> — 当前用户获取自己的画像</li>
+                    <li><code>PUT /api/profiles/me</code> — 当前用户更新画像（upsert）</li>
+                    <li>字段包括：学院、专业、年级、学号、技能、兴趣、经历、偏好（均为 JSON 文本字段，高度灵活）</li>
+                </ul>
+
+                <h4>目标管理 API</h4>
+                <ul>
+                    <li><code>POST /api/goals</code> — 创建目标</li>
+                    <li><code>GET /api/goals</code> / <code>GET /api/goals/{id}</code> — 列表和详情</li>
+                    <li><code>PUT /api/goals/{id}</code> — 更新目标</li>
+                    <li><code>DELETE /api/goals/{id}</code> — 软归档（<code>status=ARCHIVED</code>，非物理删除）</li>
+                    <li>状态机：<code>ACTIVE</code> → <code>PAUSED</code> / <code>COMPLETED</code> / <code>ARCHIVED</code></li>
+                </ul>
+
+                <h4>规划历史 API</h4>
+                <ul>
+                    <li><code>GET /api/planning/history</code> — 当前用户的 AI 交互历史列表</li>
+                    <li><code>GET /api/planning/history/{id}</code> — 详情</li>
+                    <li>每条记录包含：请求 / 响应 JSON（已脱敏）、provider、model、状态（<code>MOCKED</code>/<code>SUCCESS</code>/<code>FAILED</code>）</li>
+                    <li>历史仅对用户本人可见，无跨用户访问端点</li>
+                </ul>
+
+                <h4>问答 API（接口先行）</h4>
+                <ul>
+                    <li><code>GET /api/qa/health</code> — 健康检查（公开，返回 LLM 状态）</li>
+                    <li><code>POST /api/qa/ask</code> — 提问（需登录），返回回答及关联的 historyId</li>
+                    <li>当无 LLM key 或 Ollama 未运行时，自动降级为 mock response，无需停止服务</li>
+                    <li>每次问答自动写入 planning_history，便于后续 Agent 分析</li>
+                </ul>
+
+                <h4>灵活的 LLM 配置系统</h4>
+                <ul>
+                    <li>按用途（<code>qa</code>、<code>planning</code>、<code>profile</code>、<code>sql</code>）分组配置 provider、baseUrl、model、apiKeyEnv</li>
+                    <li>支持 DeepSeek / Qwen / GLM / GPT(Longxia) / Ollama 等多种 provider</li>
+                    <li>默认：所有用途指向本地 Ollama <code>lfm2.5:8b</code>，<code>enabled=false</code>，无需 API Key 即可启动</li>
+                    <li>配置通过 <code>application.properties</code> 或环境变量覆盖</li>
+                </ul>
+
+                <h4>LLM 客户端抽象层</h4>
+                <ul>
+                    <li><code>LlmClient</code> 接口：统一契约，与 provider 无关</li>
+                    <li><code>FallbackLlmClient</code>：确定性 mock，无需网络，永不抛出</li>
+                    <li><code>OpenAiCompatibleLlmClient</code>：基于 OkHttp 的 OpenAI 兼容协议适配</li>
+                    <li><code>LlmClientFactory</code>：根据 use case 配置自动路由到对应客户端</li>
+                </ul>
+
+                <h4>启动脚本 <code>run.sh</code></h4>
+                <ul>
+                    <li>所有 LLM 配置项通过环境变量注入，脚本本身不含密钥</li>
+                    <li>默认本地 Ollama 模式，设置 <code>LLM_XXX_ENABLED=true</code> 即可切换云端</li>
+                </ul>
+
+                <h4>项目仓库规范化</h4>
+                <ul>
+                    <li>初始化 Git 根仓库，配置 <code>.gitignore</code> 覆盖构建产物、data.db、.env、证据文件</li>
+                    <li>规划文档 <code>.sisyphus/plans/</code> 纳入版本控制</li>
+                    <li>密钥扫描纳入 CI 前检查流程</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="tech-list">
+                <h3>测试与质量</h3>
+                <ul>
+                    <li>引入 <code>BaseControllerTest</code> 测试基类（MockMvc + Spring Security + 测试隔离）</li>
+                    <li>使用 <code>target/test-data.db</code> 独立测试数据库，永不修改生产 <code>data.db</code></li>
+                    <li>总计 68 个测试，覆盖：注册/登录/登出、权限隔离、目标 CRUD、画像 upsert、历史权限、问答 fallback、LLM 客户端路由等</li>
+                    <li>新增 3 个边界测试：无效目标状态返回 400、超长问答消息返回 400、upsert 后 null 防御</li>
+                </ul>
+                <h4>代码质量修复 <span class="updated-badge">FIX</span></h4>
+                <ul>
+                    <li><code>QaController</code>：将硬编码 <code>401</code> 改为 <code>HttpStatus.UNAUTHORIZED</code></li>
+                    <li><code>QaService</code>：修复 <code>getUseCase()</code> 空指针风险，<code>ObjectMapper</code> 改为 <code>static final</code> 复用</li>
+                    <li><code>UserProfileService</code>：upsert 后读取失败时抛出明确异常，避免返回 null body</li>
+                </ul>
+            </div>
+
+            <div class="endpoint-list">
+                <h3>API 端点概览</h3>
+                <h4>用户 &amp; 反馈（既有）</h4>
+                <ul>
+                    <li><code>POST /api/users/register</code> / <code>login</code> / <code>logout</code></li>
+                    <li><code>GET /api/users/current</code> / <code>all</code></li>
+                    <li><code>POST /api/feedback/submit</code> / <code>system-error</code></li>
+                </ul>
+                <h4>画像 &amp; 目标 &amp; 历史（新增）</h4>
+                <ul>
+                    <li><code>GET / PUT /api/profiles/me</code></li>
+                    <li><code>POST / GET / PUT / DELETE /api/goals[/{id}]</code></li>
+                    <li><code>GET /api/planning/history[/{id}]</code></li>
+                </ul>
+                <h4>问答 &amp; 健康（新增）</h4>
+                <ul>
+                    <li><code>GET /api/qa/health</code> — 公开</li>
+                    <li><code>POST /api/qa/ask</code> — 需登录</li>
+                </ul>
+            </div>
+
+            <div class="known-issues-list">
+                <h3>未实现 / 已知限制</h3>
+                <ul>
+                    <li><span class="new-badge">TODO</span> Agent 完整工作流（8 月主体开发阶段）</li>
+                    <li><span class="new-badge">TODO</span> 资源库建设：竞赛 / 课程 / 项目结构化数据</li>
+                    <li><span class="new-badge">TODO</span> 能力画像 → 路径推荐的适配评估逻辑</li>
+                    <li><span class="new-badge">TODO</span> 加分规则表 (<code>college_credit_rules</code>)</li>
+                    <li>当前管理后台（<code>/admin/*</code>）尚未新增画像 / 目标 / 问答的管理界面</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>此页面记录项目的重要变更和功能发布</p>
+        <p>下次更新时间：<span class="timestamp">2026年8月</span>（Agent 主体开发）</p>
+    </footer>
+
+    <a href="../" class="back-link">← 返回首页</a>
+</body>
+</html>
