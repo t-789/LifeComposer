@@ -231,6 +231,30 @@ CREATE TABLE IF NOT EXISTS goals (
 
 ---
 
+### 6. `chat_messages`（对话消息表）✅ 已实现
+
+对话消息表，存储用户与 AI 助手的对话内容。用户重新登录后自动恢复历史。
+
+```sql
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  create_time TIMESTAMP NOT NULL
+);
+```
+
+| 字段 | 必填 | 说明 | 示例 |
+|------|------|------|------|
+| `id` | auto | Primary key | 1 |
+| `user_id` | 是 | 所属用户 ID | 5 |
+| `role` | 是 | 'user' 表示用户消息，'assistant' 表示 AI 回复 | 'user' |
+| `content` | 是 | 消息内容（纯文本） | '你好，请问有什么可以帮助你的？' |
+| `create_time` | 是 | 创建时间 | 2026-06-28 12:00:00 |
+
+---
+
 ### 6. `college_credit_rules`（加分规则表）📋 待建
 
 记录双创分和保研加分的所有标准规则。双创分和保研加分共用此表，通过 `credit_type` 区分。

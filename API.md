@@ -60,6 +60,13 @@
 | GET | `/api/qa/health` | 无 | LLM 健康检查（返回 provider/model/enabled 状态） |
 | POST | `/api/qa/ask` | 已登录 | 提问，返回回答和 historyId |
 
+## 对话 (Chat)
+
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| POST | `/api/chat/send` | 已登录 | 发送消息，返回 AI 回复 |
+| GET | `/api/chat/history` | 已登录 | 获取当前用户的对话历史 |
+| DELETE | `/api/chat/context` | 已登录 | 清除当前用户的对话上下文 |
 ## 页面路由
 
 | 方法 | 路径 | 说明 |
@@ -69,6 +76,8 @@
 | GET | `/admin` | 管理后台 (ADMIN) |
 | GET | `/admin/user` | 用户管理页 (ADMIN) |
 | GET | `/admin/feedback_management` | 反馈管理页 (ADMIN) |
+| GET | `/release-notes` | 发布说明 |
+| GET | `/front/chat_test` | AI 对话测试 |
 
 ---
 
