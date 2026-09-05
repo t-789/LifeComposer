@@ -14,4 +14,6 @@ public class UserProfileDto {
     private String interestsJson;
     private String experiencesJson;
     private String preferencesJson;
+    private String availableTime;
+    private String goals;
 }

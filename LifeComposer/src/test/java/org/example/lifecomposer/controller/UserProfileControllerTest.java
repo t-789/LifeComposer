@@ -5,6 +5,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpSession;
 
+import java.util.Map;
+
+import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -161,5 +165,87 @@ class UserProfileControllerTest extends BaseControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.college").value("第二学院"))
                 .andExpect(jsonPath("$.grade").value("2024"));
+    }
+
+    @Test
+    @DisplayName("PUT/GET /api/profiles/me - availableTime and goals round-trip end-to-end")
+    void putAndGetProfile_availableTimeAndGoals_roundTrip() throws Exception {
+        MockHttpSession session = registerAndLogin("roundtripuser", "pass123");
+
+        String body = "{\"college\":\"计算机学院\",\"major\":\"计算机科学与技术\",\"grade\":\"2024\","
+                + "\"studentId\":\"2024123456\",\"skillsJson\":\"[\\\"Java\\\"]\","
+                + "\"availableTime\":\"6 hours/week\","
+                + "\"goals\":\"[\\\"了解竞赛\\\",\\\"积累项目经历\\\"]\"}";
+
+        // PUT echoes the saved profile with both new fields
+        mockMvc.perform(put("/api/profiles/me").session(session)
+                        .header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableTime").value("6 hours/week"))
+                .andExpect(jsonPath("$.goals").value("[\"了解竞赛\",\"积累项目经历\"]"));
+
+        // GET returns both new fields from the persisted row
+        mockMvc.perform(get("/api/profiles/me").session(session)
+                        .header("User-Agent", UA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.college").value("计算机学院"))
+                .andExpect(jsonPath("$.availableTime").value("6 hours/week"))
+                .andExpect(jsonPath("$.goals").value("[\"了解竞赛\",\"积累项目经历\"]"));
+
+        // The database row itself carries the raw column values
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE username = ?",
+                (rs, rowNum) -> rs.getLong(1), "roundtripuser");
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "SELECT available_time, goals FROM user_profiles WHERE user_id = ?", userId);
+        assertEquals("6 hours/week", row.get("available_time"));
+        assertEquals("[\"了解竞赛\",\"积累项目经历\"]", row.get("goals"));
+    }
+
+    @Test
+    @DisplayName("PUT /api/profiles/me - update omitting availableTime/goals stores null, no stale values")
+    void putProfile_updateWithoutNewFields_persistsNull() throws Exception {
+        MockHttpSession session = registerAndLogin("nullpreserveuser", "pass123");
+
+        // First PUT stores both new fields
+        String firstBody = "{\"college\":\"第一学院\",\"major\":\"第一专业\","
+                + "\"availableTime\":\"10 hours/week\","
+                + "\"goals\":\"[\\\"参加竞赛\\\"]\"}";
+        mockMvc.perform(put("/api/profiles/me").session(session)
+                        .header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content(firstBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableTime").value("10 hours/week"))
+                .andExpect(jsonPath("$.goals").value("[\"参加竞赛\"]"));
+
+        // Second PUT omits the two new fields: the nulls must be persisted,
+        // not stale values from the first PUT
+        String secondBody = "{\"college\":\"第二学院\",\"major\":\"第二专业\",\"grade\":\"2024\"}";
+        mockMvc.perform(put("/api/profiles/me").session(session)
+                        .header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content(secondBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.college").value("第二学院"))
+                .andExpect(jsonPath("$.availableTime").value(nullValue()))
+                .andExpect(jsonPath("$.goals").value(nullValue()));
+
+        // GET confirms the nulls round-trip from the database
+        mockMvc.perform(get("/api/profiles/me").session(session)
+                        .header("User-Agent", UA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableTime").value(nullValue()))
+                .andExpect(jsonPath("$.goals").value(nullValue()));
+
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE username = ?",
+                (rs, rowNum) -> rs.getLong(1), "nullpreserveuser");
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "SELECT available_time, goals FROM user_profiles WHERE user_id = ?", userId);
+        assertEquals(null, row.get("available_time"));
+        assertEquals(null, row.get("goals"));
     }
 }

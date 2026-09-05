@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
 
 @Repository
 public class UserProfileRepository {
@@ -32,6 +33,8 @@ public class UserProfileRepository {
             profile.setInterestsJson(rs.getString("interests_json"));
             profile.setExperiencesJson(rs.getString("experiences_json"));
             profile.setPreferencesJson(rs.getString("preferences_json"));
+            profile.setAvailableTime(rs.getString("available_time"));
+            profile.setGoals(rs.getString("goals"));
             profile.setCreatedAt(rs.getString("created_at"));
             profile.setUpdatedAt(rs.getString("updated_at"));
             return profile;
@@ -43,13 +46,37 @@ public class UserProfileRepository {
                 CREATE TABLE IF NOT EXISTS user_profiles (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL UNIQUE,
-                    college TEXT, major TEXT, grade TEXT, student_id TEXT,
-                    skills_json TEXT, interests_json TEXT, experiences_json TEXT, preferences_json TEXT,
+                    college TEXT,
+                    major TEXT,
+                    grade TEXT,
+                    student_id TEXT,
+                    skills_json TEXT,
+                    interests_json TEXT,
+                    experiences_json TEXT,
+                    preferences_json TEXT,
+                    available_time TEXT,
+                    goals TEXT,
                     created_at TEXT NOT NULL DEFAULT (datetime('now')),
                     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
                 )
                 """;
         jdbcTemplate.execute(sql);
+    }
+
+    public void migrateUserSchema() {
+        if (!hasColumn("user_profiles", "available_time")) {
+            jdbcTemplate.execute("ALTER TABLE user_profiles ADD COLUMN available_time TEXT");
+        }
+
+        if (!hasColumn("user_profiles", "goals")) {
+            jdbcTemplate.execute("ALTER TABLE user_profiles ADD COLUMN goals TEXT");
+        }
+    }
+
+    private boolean hasColumn(String tableName, String columnName) {
+        String sql = "PRAGMA table_info(" + tableName + ")";
+        List<String> columns = jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("name"));
+        return columns.stream().anyMatch(col -> col.equalsIgnoreCase(columnName));
     }
 
     public UserProfile findByUserId(Long userId) {
@@ -67,8 +94,9 @@ public class UserProfileRepository {
                 INSERT INTO user_profiles
                     (user_id, college, major, grade, student_id,
                      skills_json, interests_json, experiences_json, preferences_json,
+                     available_time, goals,
                      created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
                     (SELECT created_at FROM user_profiles WHERE user_id = ?),
                     datetime('now')
                 ), datetime('now'))
@@ -81,6 +109,8 @@ public class UserProfileRepository {
                     interests_json = excluded.interests_json,
                     experiences_json = excluded.experiences_json,
                     preferences_json = excluded.preferences_json,
+                    available_time = excluded.available_time,
+                    goals = excluded.goals,
                     updated_at = datetime('now')
                 """;
         Long userId = profile.getUserId();
@@ -94,6 +124,8 @@ public class UserProfileRepository {
                 profile.getInterestsJson(),
                 profile.getExperiencesJson(),
                 profile.getPreferencesJson(),
+                profile.getAvailableTime(),
+                profile.getGoals(),
                 userId
         );
         return rows > 0;

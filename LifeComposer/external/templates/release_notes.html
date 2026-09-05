@@ -180,6 +180,58 @@
       ============================================================
     -->
 
+    <!-- ========== v0.0.3 ========== -->
+    <div class="container">
+        <h1>v0.0.3 — 画像扩展与成长数据底座：加分规则 / 资源库 / RAG / 能力字典</h1>
+        <p><em>2026 年 9 月 5 日</em></p>
+
+        <div class="stats-grid">
+            <div class="stat-item"><span class="stat-num">13</span><span class="stat-label">新增 API</span></div>
+            <div class="stat-item"><span class="stat-num">6</span><span class="stat-label">新增数据表</span></div>
+            <div class="stat-item"><span class="stat-num">2</span><span class="stat-label">画像新增字段</span></div>
+            <div class="stat-item"><span class="stat-num">1</span><span class="stat-label">移除数据表（goals）</span></div>
+            <div class="stat-item"><span class="stat-num">129</span><span class="stat-label">自动化测试</span></div>
+        </div>
+
+        <h2>Schema v0.0.3（数据库变更）</h2>
+        <ul>
+            <li><strong>goals 表移除</strong>：原独立 <code>goals</code> 表及 <code>/api/goals</code> 整套 CRUD 已下线（GoalController/Service/Repository 及相关测试同步删除），能力并入 <code>user_profiles.goals</code> 列（JSON 数组字符串，如 <code>["了解竞赛","积累项目经历"]</code>）</li>
+            <li><strong>user_profiles 新增 2 列</strong>：<code>available_time</code>（每周可投入时间，自由文本）与 <code>goals</code>；<code>DatabaseInitializer.migrateUserSchema()</code> 按列检测并 <code>ALTER TABLE ADD COLUMN</code>，存量 data.db 自动迁移</li>
+            <li><strong>新增 6 张表</strong>：<code>college_credit_rules</code>（加分规则标准：双创分 + 保研加分）、<code>credit_activities</code>（用户已获加分记录，<code>rule_id</code> 可选关联规则）、<code>resources</code>（成长资源库：竞赛 + 课程，靠 <code>type</code> 区分）、<code>rag_chunks</code>（RAG 检索切片）、<code>capability_tags</code>（标准能力标签字典：技术/通用 × L1/L2/L3）、<code>capability_reference</code>（能力映射字典：tags_to_merge / skill_mapping / skill_profiles / role_profiles / major_categories / _meta）</li>
+            <li><strong>resources 双键设计</strong>：<code>id</code>（INTEGER AUTOINCREMENT）为物理主键，<code>resource_id</code> 为数据侧业务键（<code>competition_001</code> / <code>course_001</code>，UNIQUE），供外部引用关联</li>
+            <li><strong>rag_chunks.related_resource_id</strong> 逻辑关联 <code>resources.resource_id</code> 业务键（不关联资源的切片如学院规则概览为 NULL）</li>
+        </ul>
+
+        <h2>新增 API 端点</h2>
+        <ul>
+            <li><code>GET /api/college-credit-rules</code>（可选 <code>college</code> / <code>creditType</code> / <code>category</code> 过滤）、<code>GET /api/college-credit-rules/{id}</code> — 规则查询（需登录）</li>
+            <li><code>POST /api/college-credit-rules</code> — 新建加分规则（需 ADMIN）</li>
+            <li><code>GET /api/credit-activities</code>、<code>GET /api/credit-activities/{id}</code>、<code>POST /api/credit-activities</code>、<code>PUT /api/credit-activities/{id}</code>、<code>DELETE /api/credit-activities/{id}</code> — 当前用户本人加分记录 CRUD（需登录；<code>verified</code> 由服务端控制，用户不可自设）</li>
+            <li><code>GET /api/resources</code>（可选 <code>type</code> = competition / course 过滤）、<code>GET /api/resources/{id}</code>（优先按业务键 <code>resource_id</code> 匹配，纯数字回退物理主键）— 资源库只读（需登录）</li>
+            <li><code>GET /api/rag-chunks</code>（可选 <code>relatedResourceId</code> 过滤，关联资源业务键）— RAG 切片只读（需登录）</li>
+            <li><code>GET /api/capability-tags</code> — 标准能力标签字典只读，按标签名排序（需登录）</li>
+            <li><code>GET /api/capability-reference</code>（可选 <code>section</code> 过滤，仅支持 tags_to_merge / skill_mapping / skill_profiles / role_profiles / major_categories / _meta）— 能力映射字典只读（需登录）</li>
+        </ul>
+
+        <h2>画像 API 扩展</h2>
+        <ul>
+            <li><code>GET / PUT /api/profiles/me</code> — 字段扩展：新增 <code>availableTime</code>（每周可投入时间）、<code>goals</code>（成长目标 JSON 数组）</li>
+            <li>目标功能自 v0.0.3 起由画像携带，不再单独维护目标表与目标 API</li>
+        </ul>
+
+        <h2>安全配置变更</h2>
+        <ul>
+            <li><code>WebSecurityConfig</code> 新增 6 个前缀的 <code>authenticated()</code> 匹配：<code>/api/college-credit-rules/**</code>、<code>/api/credit-activities/**</code>、<code>/api/resources/**</code>、<code>/api/rag-chunks/**</code>、<code>/api/capability-tags/**</code>、<code>/api/capability-reference/**</code>（其中 <code>POST /api/college-credit-rules</code> 另需 ADMIN）</li>
+            <li>移除 <code>/api/goals/**</code> 认证匹配；公开端点与 ADMIN 端点配置保持不变</li>
+        </ul>
+
+        <h2>文档同步</h2>
+        <ul>
+            <li>根目录 <code>API.md</code> 与 <code>external/static/apiList.txt</code> 已重写为 v0.0.3 真实端点列表：删除 goals 段，新增 credit / resource / rag / capability 段，画像段补充 <code>availableTime</code> / <code>goals</code> 字段，认证说明更新（旧论坛 / 点位 / AI 时代遗留端点从 apiList.txt 彻底清除）</li>
+            <li>自动化测试全绿：<strong>129 个测试，0 失败</strong></li>
+        </ul>
+    </div>
+
     <!-- ========== v0.0.2 ========== -->
     <div class="container">
         <h1>v0.0.2 — AI 对话原型与日志系统</h1>
@@ -372,7 +424,7 @@
 
     <footer>
         <p>此页面记录项目的重要变更和功能发布</p>
-        <p>下次更新时间：<span class="timestamp">2026年8月</span>（Agent 主体开发）</p>
+        <p>下次更新时间：<span class="timestamp">2026年9月</span>（v0.0.3 后续迭代）</p>
     </footer>
 
     <a href="../" class="back-link">← 返回首页</a>

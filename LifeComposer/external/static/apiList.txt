@@ -1,76 +1,65 @@
 # API 列表
 
-## AI 相关接口
-POST /api/ai/chat 处理AI聊天消息
-GET /api/ai/health AI服务健康检查
-GET /api/ai/test 测试关键词功能（GET方式）
-POST /api/ai/test 测试关键词功能（POST方式）
-POST /api/ai/deepseek 直接与DeepSeek通信
+本文件为 LifeComposer 当前（v0.0.3, 2026-09-05）已实现端点的真实列表，与后端 Controller 保持一致。旧版论坛/点位/AI 端点已移除，不再列出。
+
+## 用户相关接口
+POST /api/users/register 用户注册（无需登录）
+POST /api/users/login 用户登录，设置 session（无需登录）
+POST /api/users/logout 用户登出（需登录）
+GET /api/users/current 获取当前用户信息，未登录返回 401（需登录）
+GET /api/users/all 获取所有用户（仅管理员，已过滤密码字段）
+PUT /api/users/{userId}/grant-admin 授予管理员权限（仅管理员）
+PUT /api/users/{userId}/revoke-admin 撤销管理员权限（仅管理员）
+PUT /api/users/{userId}/ban 封禁用户，body 传 banTime（如 1d/30m/1y，0 为永久）（仅管理员）
+PUT /api/users/{userId}/unban 解封用户（仅管理员）
+POST /api/users/admin/reset-password/{userId} 管理员重置密码为 000000（仅管理员）
 
 ## 反馈相关接口
-POST /api/feedback/submit 用户提交反馈
-POST /api/feedback/system-error 系统自动提交错误反馈
+POST /api/feedback/submit 用户提交反馈（无需登录，可匿名）
+POST /api/feedback/system-error 系统错误报告（无需登录，可匿名）
 GET /api/feedback/all 获取所有反馈（仅管理员）
 GET /api/feedback/type/{type} 根据类型获取反馈（仅管理员）
 POST /api/feedback/{id}/resolve 更新反馈解决状态（仅管理员）
 
-## 论坛相关接口
-POST /api/forum/create 创建论坛帖子。若未登录返回403，创建帖子失败返回400
-POST /api/forum/create-with-picture 创建论坛帖子并上传图片，若未登录返回403，创建帖子失败返回400，图片没上传全则会返回200，但是会显示图片没有全部上传成功。
-GET /api/forum/all 获取所有论坛帖子。若未登录返回403
-GET /api/forum/user/{userId} 根据用户ID获取论坛帖子。若未登录返回403
-GET /api/forum/{forumId} 根据帖子ID获取特定帖子。若未登录返回403
-DELETE /api/forum/{forumId} 管理员删除论坛帖子。若未登录返回403，权限不足返回400
-POST /api/forum/{forumId}/like 点赞帖子。若未登录返回403，已点赞返回400
-DELETE /api/forum/{forumId}/like 取消点赞帖子。若未登录返回403，未点赞返回400
-POST /api/forum/{forumId}/favorite 收藏帖子。若未登录返回403，已收藏返回400
-DELETE /api/forum/{forumId}/favorite 取消收藏帖子。若未登录返回403，未收藏返回400
-POST /api/forum/{forumId}/comment 添加评论。若未登录返回403，评论内容为空返回400
-DELETE /api/forum/comment/{commentId} 管理员删除评论（软删除）。若未登录返回403，权限不足返回400
-GET /api/forum/user/liked 获取用户所有点赞的帖子ID。若未登录返回403
-GET /api/forum/user/favorited 获取用户所有收藏的帖子ID。若未登录返回403
-POST /api/forum/{forum_id}/picture 为帖子添加图片。若未登录返回403，权限不足返回403，帖子不存在返回404
-DELETE /api/forum/{forum_id}/picture 删除帖子图片。若未登录返回403，权限不足返回403，帖子不存在返回404
-GET /api/forum/{forum_id}/picture/ 获取帖子图片数量。帖子无关联图片返回404
-GET /api/forum/{forum_id}/picture/{id} 获取帖子指定图片。若未登录返回403，图片不存在返回404
-GET /api/forum/search?keyword=... 搜索含有关键字的帖子。若未登录返回403
-GET /api/forum/create_with_point 创建带点位信息的帖子。若未登录返回403
+## 用户画像相关接口
+GET /api/profiles/me 获取当前用户画像（需登录）
+PUT /api/profiles/me 创建或更新当前用户画像（upsert，需登录）
+字段：college / major / grade / studentId / skillsJson / interestsJson / experiencesJson / preferencesJson / availableTime（v0.0.3 新增）/ goals（v0.0.3 新增，替代原 goals 表）
 
-## 点位相关接口
-POST /api/points/save 保存点位。若未登录返回403，点位已存在返回400
-POST /api/points/save-json 保存点位（点位描述图片为base64）
-GET /api/points/active 获取所有活跃点位
-POST /api/points/{pointId}/propose-delete 提议删除点位。若未登录返回403
-DELETE /api/points/{pointId} 管理员删除点位。若未登录返回403，权限不足返回400
-POST /api/points/{pointId}/restore 管理员恢复点位。若未登录返回403，权限不足返回400
-GET /api/points/threshold 获取删除阈值
-POST /api/points/threshold 设置删除阈值（仅管理员）。若未登录返回403，权限不足返回400
-POST /api/points/{pointId}/confirm 确认点位存在。若未登录返回403
-GET /api/points/all 获取所有点位（包括已删除的）- 仅管理员可用。若未登录返回403，权限不足返回400
-POST /api/points/type-map 保存类型映射（仅管理员）。若未登录返回403，权限不足返回400
-GET /api/points/type-map 获取所有类型映射
-GET /api/points/distance 根据距离获取点位
+## 规划历史相关接口
+GET /api/planning/history 获取当前用户的 AI 交互历史列表（需登录）
+GET /api/planning/history/{id} 获取历史详情，仅本人可见（需登录）
 
-## 统计相关接口
-GET /api/statistic/get 获取统计信息
+## 问答相关接口
+GET /api/qa/health LLM 健康检查，返回 provider/model/enabled 等状态（无需登录）
+POST /api/qa/ask 向 AI 提问，返回回答及 historyId（需登录）
 
-## 用户相关接口
-POST /api/users/register 用户注册（JSON格式）
-POST /api/users/register-with-security 用户注册（带头像上传和密保问题设置，表单版本）
-POST /api/users/register-with-security-json 用户注册（带密保问题设置，JSON版本，可选头像Base64）
-POST /api/users/login 用户登录
-POST /api/users/logout 用户登出
-GET /api/users/current 获取当前用户信息。用户未登录返回401
-POST /api/users/upload-avatar 上传用户头像。用户未登录返回401，文件为空或格式不对返回400
-GET /api/users/security-questions 获取所有安全问题
-GET /api/users/{username}/security-questions 获取用户安全问题（用于密码重置）
-POST /api/users/reset-password 验证密保问题并重置密码
-PUT /api/users/{userId}/ban 封禁用户。若未登录返回403
-PUT /api/users/{userId}/unban 解封用户。若未登录返回403
-PUT /api/users/{userId}/grant-admin 授予用户管理员权限。若未登录返回403
-PUT /api/users/{userId}/revoke-admin 撤销用户管理员权限。若未登录返回403
-POST /api/users/admin/reset-password/{userId} 管理员重置用户密码。若未登录返回403，权限不足返回400
-POST /api/users/admin/security-question 添加安全问题（管理员接口）。若未登录返回403，权限不足返回400
-DELETE /api/users/admin/security-question/{questionId} 删除安全问题（管理员接口）。若未登录返回403，权限不足返回400
-PUT /api/users/admin/security-question/{questionId} 更新安全问题（管理员接口）。若未登录返回403，权限不足返回400
-GET /api/users/profile 获取用户个人主页信息。若未登录返回403
+## 对话 (Chat) 相关接口
+POST /api/chat/send 发送消息，返回 ChatResponse（role/content/createTime/mocked/error）（需登录）
+GET /api/chat/history 获取当前用户的对话历史（需登录）
+DELETE /api/chat/context 清除当前用户的对话上下文（需登录）
+
+## 加分规则相关接口
+GET /api/college-credit-rules 获取加分规则列表，可选过滤参数 college / creditType / category（需登录）
+GET /api/college-credit-rules/{id} 获取加分规则详情（需登录）
+POST /api/college-credit-rules 新建加分规则（仅管理员）
+
+## 加分记录相关接口
+GET /api/credit-activities 获取当前用户的加分记录列表（需登录）
+GET /api/credit-activities/{id} 获取加分记录详情，仅本人可见（需登录）
+POST /api/credit-activities 新建加分记录，归属当前用户（需登录）
+PUT /api/credit-activities/{id} 更新加分记录，仅本人可见（需登录）
+DELETE /api/credit-activities/{id} 删除加分记录，仅本人可见（需登录）
+
+## 成长资源库相关接口
+GET /api/resources 获取资源列表，可选 type 过滤（competition 或 course），不带参数返回全部（需登录）
+GET /api/resources/{id} 获取资源详情，优先按业务键 resource_id 匹配，纯数字回退物理主键（需登录）
+
+## RAG 检索切片相关接口
+GET /api/rag-chunks 获取 RAG 切片列表，可选 relatedResourceId 过滤，不带参数返回全部（需登录）
+
+## 能力标签字典相关接口
+GET /api/capability-tags 获取全部标准能力标签（按标签名排序）（需登录）
+
+## 能力映射字典相关接口
+GET /api/capability-reference 获取能力映射字典，可选 section 过滤（tags_to_merge / skill_mapping / skill_profiles / role_profiles / major_categories / _meta），不带参数返回全部（需登录）

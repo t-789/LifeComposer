@@ -2,7 +2,7 @@
 
 ## 概述
 
-本系统面向北邮大学生成长规划场景，基于 SQLite 数据库存储。当前设计包含 7 张核心表：
+本系统面向北邮大学生成长规划场景，基于 SQLite 数据库存储。当前设计包含 11 张表（5 张已实现 + 6 张待建）：
 
 ### 已实现（v0.0.1）
 
@@ -12,7 +12,7 @@
 | `feedback` | 用户反馈与系统错误 |
 | `user_profiles` | 用户画像扩展 |
 | `planning_history` | AI 交互历史记录 |
-| `goals` | 用户目标设定 |
+| `chat_messages` | 对话消息 |
 
 ### 待建（8月主体开发）
 
@@ -20,6 +20,10 @@
 |------|------|
 | `college_credit_rules` | 加分规则标准（双创分 + 保研加分） |
 | `credit_activities` | 用户已获得的加分记录 |
+| `resources` | 成长资源库（竞赛 + 课程，靠 `type` 区分） |
+| `rag_chunks` | RAG 检索切片 |
+| `capability_tags` | 标准能力标签字典（10 个标签 × L1/L2/L3） |
+| `capability_reference` | 能力映射/模板/大类字典（tags_to_merge / skill_mapping / skill_profiles / role_profiles / major_categories） |
 
 > **注意**：SQLite 当前 `PRAGMA foreign_keys = OFF`（默认），表之间的 `REFERENCES` 约束仅作为逻辑关联标注，运行时不强制。
 
@@ -32,10 +36,16 @@ users
   ├─ 1:1 ── user_profiles     （按 user_id 关联）
   ├─ 1:N ── feedback          （按 user_id 关联）
   ├─ 1:N ── planning_history  （按 user_id 关联）
-  └─ 1:N ── goals             （按 user_id 关联）
+  └─ 1:N ── chat_messages     （按 user_id 关联）
 
 college_credit_rules
   └─ 1:N ── credit_activities （按 rule_id 可选关联）
+
+resources
+  └─ 1:N ── rag_chunks          （按 related_resource_id 可选关联）
+
+capability_tags
+  └─ 被引用 ── capability_reference / resources.teaches_skills_json / rag_chunks （按标签名弱关联）
 ```
 
 ---
@@ -106,7 +116,7 @@ CREATE TABLE IF NOT EXISTS feedback (
 | `username` | 否 | 冗余存储用户名（提交时的快照） | 'alice' |
 | `content` | 是 | 反馈内容/错误信息 | '页面加载失败' |
 | `type` | 是 | 类型：'user'=用户反馈，'system'=系统错误 | 'system' |
-| `url` | 否 | 触发错误的 URL（系统错误时自动记录） | '/api/goals/123' |
+| `url` | 否 | 触发错误的 URL（系统错误时自动记录） | '/api/profiles/me' |
 | `user_agent` | 否 | 请求 User-Agent（用于 Bot 检测与问题排查） | 'Mozilla/5.0...' |
 | `stack_trace` | 否 | 错误堆栈信息（仅系统错误） | 'java.lang.NullPointerException...' |
 | `create_time` | 是 | 创建时间（代码传入，非自动填充） | 2026-06-27 10:00:00 |
@@ -132,6 +142,8 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     interests_json TEXT,
     experiences_json TEXT,
     preferences_json TEXT,
+    available_time TEXT,
+    goals TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -150,8 +162,12 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 | `interests_json` | 兴趣方向（JSON 数组） | `["人工智能","嵌入式"]` |
 | `experiences_json` | 经历记录（JSON 数组） | `["电子设计竞赛"]` |
 | `preferences_json` | 用户偏好（JSON 对象） | `{"theme":"dark"}` |
+| `available_time` | 每周可投入时间（自由文本，对应数据样例 `available_time`） | '6 hours/week' |
+| `goals` | 用户成长目标（JSON 数组字符串）。2026-09-05 起原独立 `goals` 表已移除，目标方向统一由本列承载 | `["了解竞赛","积累项目经历"]` |
 | `created_at` | 创建时间（自动，datetime 函数） | 2026-06-27 10:00:00 |
 | `updated_at` | 更新时间（自动，datetime 函数） | 2026-06-27 10:00:00 |
+
+> **2026-09-05 变更**：① 为兼容 `样例/data/student_profiles.json` 新增 `available_time`、`goals` 两列（样例中的 `_说明` 为注释键，不入库）；代码落地时在 `DatabaseInitializer.migrateUserSchema()` 中按列检测并 ALTER TABLE ADD COLUMN。② **原 `goals` 表（含 `/api/goals` 整套 CRUD）已决定移除**：其能力与 `user_profiles.goals` 列冗余。代码落地时需同步删除 GoalsController/Service/Repository 及相关测试，并将存量 data.db 中的 goals 行合并进对应 profile 后再停用表。
 
 ---
 
@@ -192,46 +208,7 @@ CREATE TABLE IF NOT EXISTS planning_history (
 
 ---
 
-### 5. `goals`（目标设定表）✅ 已实现
-
-用户设定的短期/长期目标，供规划引擎使用。独立于规划历史，可跨多次规划持续追踪。
-
-```sql
-CREATE TABLE IF NOT EXISTS goals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT,
-    category TEXT,
-    priority TEXT,
-    status TEXT NOT NULL DEFAULT 'ACTIVE',
-    target_date TEXT,
-    progress INTEGER DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-```
-
-**字段说明：**
-
-| 字段 | 说明 | 示例 |
-|------|------|------|
-| `user_id` | 关联用户 | 1 |
-| `title` | 目标标题 | '参加数学建模竞赛' |
-| `description` | 目标描述 | null 或详细说明 |
-| `category` | 目标类别（代码无 CHECK 约束，常见值如下） | 'academic' |
-| `priority` | 优先级（代码无 CHECK 约束，常见值：'high'/'medium'/'low'） | 'medium' |
-| `status` | 状态（代码无 CHECK 约束，常见值：'ACTIVE'/'PAUSED'/'COMPLETED'/'ARCHIVED'） | 'ACTIVE' |
-| `target_date` | 目标期限 | '2027-06-30' |
-| `progress` | 进度百分比（建议 0~100，代码无硬性约束） | 50 |
-| `created_at` | 创建时间（自动，datetime 函数） | 2026-06-27 10:00:00 |
-| `updated_at` | 更新时间（自动，datetime 函数） | 2026-06-27 10:00:00 |
-
-> **约束说明**：代码中 `category`、`priority`、`status`、`progress` 均未使用 CHECK 约束。取值约定由 Java 层控制。
-
----
-
-### 6. `chat_messages`（对话消息表）✅ 已实现
+### 5. `chat_messages`（对话消息表）✅ 已实现
 
 对话消息表，存储用户与 AI 助手的对话内容。用户重新登录后自动恢复历史。
 
@@ -273,6 +250,8 @@ CREATE TABLE college_credit_rules (
   team_formula      TEXT,
   student_cohort    TEXT,
   doc_source        TEXT,
+  levels_json       TEXT,
+  notes             TEXT,
   created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -293,7 +272,11 @@ CREATE TABLE college_credit_rules (
 | `team_formula` | 否 | 团队赛加分公式说明 | '系数 = 1 + (x-1) × 0.6' |
 | `student_cohort` | 否 | 适用年级/学生群体 | '2023' |
 | `doc_source` | 否 | 来源文件名称 | '信通院创新实践活动加分办法_2023级起适用.pdf' |
+| `levels_json` | 否 | 竞赛阶段数组（JSON），由 comp_level/竞赛名称推断；不确定时填空数组。取值不封闭（另有 regional / world_final 等），不设 CHECK | `["national"]` |
+| `notes` | 否 | 人工复核备注（对应样例 `_notes`，346 条中 228 条非空；含分档口径、个人累计上限等说明） | '特等奖按一等奖认定；个人累计加分上限4分。' |
 | `created_at` | 自动 | 记录创建时间 | 2026-06-11 12:00:00 |
+
+> **样例校验（2026-09-05）**：`样例/extracted/*.json` 共 346 条规则，已全量验证 CHECK / NOT NULL 零违反，可按列名直接导入。注意样例 `credit_type` 目前全部为 `recommendation`（保研加分），`graduation`（双创分）数据尚缺，待数据负责人补充。
 
 ---
 
@@ -345,6 +328,168 @@ CREATE INDEX idx_ca_type ON credit_activities(credit_type);
 
 ---
 
+### 8. `resources`（成长资源表）📋 待建
+
+成长资源库：竞赛与课程同表存储，靠 `type` 区分。种子数据：`样例/data/resources.json`（18 条：竞赛 12 + 课程 6）。嵌套结构以 JSON TEXT 列原样保留（与 `user_profiles` 的 JSON 风格一致），不对 stages / bonus_point 做垂直分表。
+
+```sql
+CREATE TABLE resources (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  resource_id           TEXT NOT NULL UNIQUE,
+  name                  TEXT NOT NULL,
+  type                  TEXT NOT NULL CHECK(type IN ('competition', 'course')),
+  levels_json           TEXT,
+  stages_json           TEXT,
+  target_majors_json    TEXT,
+  registration_start    TEXT,
+  registration_deadline TEXT,
+  required_skills_json  TEXT,
+  difficulty            TEXT CHECK(difficulty IN ('easy', 'medium', 'hard')),
+  preparation_period    TEXT,
+  team_roles_json       TEXT,
+  bonus_point_json      TEXT,
+  provider              TEXT,
+  course_link           TEXT,
+  description           TEXT,
+  teaches_skills_json   TEXT,
+  source_url            TEXT,
+  source_urls_json      TEXT,
+  source_file           TEXT,
+  notes_json            TEXT,
+  data_quality          TEXT NOT NULL DEFAULT 'needs_review' CHECK(data_quality IN ('complete', 'partial', 'needs_review')),
+  updated_at            TEXT,
+  created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+> **双键设计**：`id`（INTEGER AUTOINCREMENT）为物理主键，与项目其余表风格一致；`resource_id` 为数据侧业务 id（`competition_###` / `course_###`），UNIQUE，供 `rag_chunks.related_resource_id` 及样例数据文件间互相引用。导入时按 `resource_id` 做 upsert（重复导入同一交付包不产生重复行）。
+
+**字段说明：**
+
+| 字段 | 适用 | 说明 | 示例 |
+|------|------|------|------|
+| `id` | 全部 | 物理主键（AUTOINCREMENT） | 1 |
+| `resource_id` | 全部 | 数据侧业务 id（UNIQUE），供外部引用关联 | 'competition_002' |
+| `name` | 全部 | 资源名称 | '蓝桥杯全国软件和信息技术专业人才大赛' |
+| `type` | 全部 | competition=竞赛, course=课程 | 'competition' |
+| `levels_json` | 竞赛 | 阶段数组（JSON），取值不封闭，不设 CHECK；空数组=未确认 | `["provincial","national"]` |
+| `stages_json` | 竞赛 | 赛程安排数组：`[{"stage","month","format","award_ratio"}]` | `[{"stage":"provincial","month":"4月",...}]` |
+| `target_majors_json` | 全部 | 目标专业：`{"categories":[学科大类],"majors":[...]}`；不限时为 `["不限"]` | `{"categories":["工科"]}` |
+| `registration_start` | 竞赛 | 报名开始日（ISO 日期），未确认填 NULL（`notes_json` 记录 unknown 说明） | '2026-05-01' |
+| `registration_deadline` | 竞赛 | 报名截止日 | '2026-09-07' |
+| `required_skills_json` | 竞赛 | 技能需求**引用**：`{"profile":模板名}`，可带 `extra`/`exclude`；使用前必须经 `capability_reference` 的 skill_profiles 展开。课程为空数组 | `{"profile":"algorithm_contest"}` |
+| `difficulty` | 全部 | 难度三档 | 'medium' |
+| `preparation_period` | 全部 | 建议准备周期（自由文本） | '1-3 months' |
+| `team_roles_json` | 竞赛 | 队伍角色引用：`{"profile":...}` 或数组；NULL/空=个人赛 | `{"profile":"modeling_team"}` |
+| `bonus_point_json` | 竞赛 | 保研加分档位：`{"档位中文描述": 分值}`，含 `_note` 记录依据文件 | `{"国家级一等奖及以上":3.0}` |
+| `provider` | 课程 | 开课单位 | '浙江大学' |
+| `course_link` | 课程 | 课程链接 | 'https://www.icourse163.org/...' |
+| `description` | 课程 | 课程介绍（竞赛条目为 NULL） | '翁恺主讲...' |
+| `teaches_skills_json` | 课程 | 学完培养的标准能力标签数组（直接取值 `capability_tags.name`） | `["编程基础"]` |
+| `source_url` | 全部 | 主来源链接 | 'https://www.mcm.edu.cn' |
+| `source_urls_json` | 全部 | 多来源链接对象：`{"intro":..,"registration":..}` 等 | `{"intro":"https://..."}` |
+| `source_file` | 全部 | 来源文件名（网络来源为空串） | '' |
+| `notes_json` | 全部 | 样例 `_notes` 数组（缺失值记录、复核线索、unknown 说明） | `["报名日期未确认"]` |
+| `data_quality` | 全部 | 数据质量：complete=双重确认 / partial=可选字段未确认 / needs_review=二手来源待核成。默认 needs_review（保守兜底） | 'complete' |
+| `updated_at` | 全部 | 数据侧维护日期 | '2026-09-04' |
+| `created_at` | 全部 | 入库时间（自动） | 2026-09-05 10:00:00 |
+
+---
+
+### 9. `rag_chunks`（RAG 切片表）📋 待建
+
+检索增强用的知识切片。种子数据：`样例/rag/chunks.json`（28 条：学院加分规则概览 ×6、竞赛 ×12、课程 ×6、能力标签说明 ×2、早期手写 ×2）。
+
+```sql
+CREATE TABLE rag_chunks (
+  chunk_id            TEXT PRIMARY KEY,
+  title               TEXT NOT NULL,
+  text                TEXT NOT NULL,
+  source_type         TEXT CHECK(source_type IN ('web', 'pdf', 'json')),
+  source_url          TEXT,
+  source_file         TEXT,
+  page_or_section     TEXT,
+  related_resource_id TEXT,
+  created_at          TEXT
+);
+
+CREATE INDEX idx_rag_related ON rag_chunks(related_resource_id);
+```
+
+| 字段 | 必填 | 说明 | 示例 |
+|------|------|------|------|
+| `chunk_id` | 是 | 切片唯一 id | 'rag_001' |
+| `title` | 是 | 切片标题 | '数学建模竞赛参赛基本要求' |
+| `text` | 是 | 切片正文（程序化生成，禁止手写编造） | '全国大学生数学建模竞赛…' |
+| `source_type` | 否 | 来源类型（样例分布：web 20 / pdf 6 / json 2） | 'web' |
+| `source_url` | 否 | 来源链接（可回查） | 'https://www.mcm.edu.cn' |
+| `source_file` | 否 | 来源文件名 | '' |
+| `page_or_section` | 否 | 页码/章节定位 | '参赛须知' |
+| `related_resource_id` | 否 | 逻辑关联 `resources.resource_id`（业务 id）；样例中 8/28 条不关联任何资源（如学院规则概览），允许 NULL | 'competition_001' |
+| `created_at` | 否 | 切片生成日期 | '2026-06-06' |
+
+> **`rag/test_questions.json` 不入库**：10 个检索回归测试题（含 `expected_chunk_ids`）属于测试夹具，建议放在 `src/test/resources/` 下作为检索效果的验收数据，不建表。
+
+---
+
+### 10. `capability_tags`（能力标签表）📋 待建
+
+标准能力标签权威字典（唯一来源：`样例/draft/capability-tags.json` 的 `tags` 节）。推荐模块解释「差在哪、怎么补」时使用。
+
+```sql
+CREATE TABLE capability_tags (
+  name                  TEXT PRIMARY KEY,
+  category              TEXT NOT NULL CHECK(category IN ('技术能力', '通用能力')),
+  level1_desc           TEXT,
+  level2_desc           TEXT,
+  level3_desc           TEXT,
+  skill_aliases_json    TEXT,
+  typical_evidence_json TEXT,
+  created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `name` | 标准标签名（样例 10 个：编程基础、算法与数据结构、数学建模、数据分析、AI 工具应用、文档写作、表达展示、团队协作、项目经验、英语阅读） | '编程基础' |
+| `category` | 技术能力 / 通用能力 | '技术能力' |
+| `level1_desc` ~ `level3_desc` | L1/L2/L3 等级描述 | '能用一门语言完成课程作业…' |
+| `skill_aliases_json` | 常见写法数组 | `["C语言","C++",...]` |
+| `typical_evidence_json` | 典型证据数组 | `["课程成绩单",...]` |
+
+---
+
+### 11. `capability_reference`（能力映射字典表）📋 待建
+
+承载 capability-tags.json 中除 `tags` 外的其余节：`tags_to_merge`、`skill_mapping`、`skill_profiles`、`role_profiles`、`major_categories`，外加 `_meta` 行记录字典版本号。统一为 key→JSON 的窄表，避免为一类低频变化的字典拆 5 张表。
+
+```sql
+CREATE TABLE capability_reference (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  section   TEXT NOT NULL CHECK(section IN ('tags_to_merge', 'skill_mapping', 'skill_profiles', 'role_profiles', 'major_categories', '_meta')),
+  ref_key   TEXT NOT NULL,
+  ref_value TEXT NOT NULL,
+  note      TEXT,
+  UNIQUE(section, ref_key)
+);
+```
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `section` | 所属字典节 | 'skill_mapping' |
+| `ref_key` | 键 | 'Python编程' / 'algorithm_contest' / '工科' |
+| `ref_value` | 值：标量文本或 JSON 数组/对象。skill_mapping=标签数组；skill_profiles=`{"skills":[...],"note":...}`；role_profiles=角色数组；major_categories=专业数组；tags_to_merge=合并去向文本 | `["编程基础"]` |
+| `note` | 该节 `_说明` 中提取的备注（可空） | '可复用的技能需求模板' |
+
+**用法约定（数据侧规范）**：
+- 学生自填技能 → 先过 `skill_mapping` 归一，再与标签匹配，匹配前先展开资源引用模板。
+- `resources.required_skills_json.profile` → 查 `section='skill_profiles'` 行展开为标签列表。
+- `target_majors_json.categories` → 查 `section='major_categories'` 判断专业归属。
+- 字典文件版本记入 `section='_meta'`（如 ref_key='version', ref_value='1.1'）。
+
+---
+
 ## 建表顺序
 
 由于存在外键依赖，建表应遵循以下顺序：
@@ -356,7 +501,11 @@ CREATE INDEX idx_ca_type ON credit_activities(credit_type);
 4. user_profiles（依赖 users）
 5. credit_activities（依赖 users + college_credit_rules（可选））
 6. planning_history（依赖 users）
-7. goals（依赖 users）
+7. chat_messages（依赖 users）
+8. resources（无外部依赖）
+9. rag_chunks（依赖 resources.resource_id（可选））
+10. capability_tags（无外部依赖）
+11. capability_reference（无外部依赖，字典内容弱引用 capability_tags.name）
 ```
 
 > 上述建表逻辑在 `DatabaseInitializer.init()` 方法中通过 `createXxxTableIfNeeded()` 逐步执行。
@@ -375,6 +524,6 @@ CREATE INDEX idx_ca_type ON credit_activities(credit_type);
 ---
 
 *设计日期：2026-06-11*
-*更新日期：2026-06-28*
-*参考文件：信通院创新实践活动加分办法_2023级起适用.pdf*
+*更新日期：2026-09-05（第二轮：移除 goals 表并入 user_profiles.goals；resources 改双键 AUTOINCREMENT id + 唯一业务 id resource_id；前轮：college_credit_rules 加 levels_json/notes，user_profiles 加 available_time/goals，新增 resources / rag_chunks / capability_tags / capability_reference）*
+*参考文件：信通院创新实践活动加分办法_2023级起适用.pdf；样例/SAMPLES-README.md（数据交付包 2026-09-05 快照）*
 *实际代码：LifeComposer/src/main/java/org/example/lifecomposer/Repository/*.java*

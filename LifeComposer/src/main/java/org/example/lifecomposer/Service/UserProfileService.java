@@ -33,6 +33,8 @@ public class UserProfileService {
         profile.setInterestsJson(dto.getInterestsJson());
         profile.setExperiencesJson(dto.getExperiencesJson());
         profile.setPreferencesJson(dto.getPreferencesJson());
+        profile.setAvailableTime(dto.getAvailableTime());
+        profile.setGoals(dto.getGoals());
 
         boolean upserted = userProfileRepository.upsert(profile);
         if (!upserted) {
@@ -59,6 +61,8 @@ public class UserProfileService {
         dto.setInterestsJson(profile.getInterestsJson());
         dto.setExperiencesJson(profile.getExperiencesJson());
         dto.setPreferencesJson(profile.getPreferencesJson());
+        dto.setAvailableTime(profile.getAvailableTime());
+        dto.setGoals(profile.getGoals());
         return dto;
     }
 }

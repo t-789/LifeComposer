@@ -3,8 +3,8 @@ package org.example.lifecomposer.Controller;
 import jakarta.validation.Valid;
 import org.example.lifecomposer.Entity.User;
 import org.example.lifecomposer.Repository.UserRepository;
-import org.example.lifecomposer.Service.GoalService;
-import org.example.lifecomposer.dto.GoalDto;
+import org.example.lifecomposer.Service.CreditActivityService;
+import org.example.lifecomposer.dto.CreditActivityDto;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -12,87 +12,81 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 @RestController
-@RequestMapping("/api/goals")
-public class GoalController {
+@RequestMapping("/api/credit-activities")
+public class CreditActivityController {
 
-    private final GoalService goalService;
+    private final CreditActivityService creditActivityService;
     private final UserRepository userRepository;
 
-    private static final Logger LOG = LogManager.getLogger(GoalController.class);
-
-    public GoalController(GoalService goalService, UserRepository userRepository) {
-        this.goalService = goalService;
+    public CreditActivityController(CreditActivityService creditActivityService,
+                                    UserRepository userRepository) {
+        this.creditActivityService = creditActivityService;
         this.userRepository = userRepository;
     }
 
-    @PostMapping
-    public ResponseEntity<?> createGoal(Authentication authentication,
-                                        @Valid @RequestBody GoalDto dto) {
+    @GetMapping
+    public ResponseEntity<?> listActivities(Authentication authentication) {
         User currentUser = getCurrentUser(authentication);
         if (currentUser == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("用户未登录");
         }
-        LOG.info("Creating goal for user: {}", currentUser.getId());
+        return ResponseEntity.ok(creditActivityService.listActivities(currentUser.getId().longValue()));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getActivity(@PathVariable Long id, Authentication authentication) {
+        User currentUser = getCurrentUser(authentication);
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("用户未登录");
+        }
         try {
-            GoalDto created = goalService.createGoal(currentUser.getId().longValue(), dto);
-            return ResponseEntity.ok(created);
+            return ResponseEntity.ok(creditActivityService.getActivity(id, currentUser.getId().longValue()));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 
-    @GetMapping
-    public ResponseEntity<?> listGoals(Authentication authentication) {
-        User currentUser = getCurrentUser(authentication);
-        if (currentUser == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("用户未登录");
-        }
-        return ResponseEntity.ok(goalService.listGoals(currentUser.getId().longValue()));
-    }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<?> getGoal(@PathVariable Long id, Authentication authentication) {
+    @PostMapping
+    public ResponseEntity<?> createActivity(Authentication authentication,
+                                            @Valid @RequestBody CreditActivityDto dto) {
         User currentUser = getCurrentUser(authentication);
         if (currentUser == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("用户未登录");
         }
         try {
-            return ResponseEntity.ok(goalService.getGoal(id, currentUser.getId().longValue()));
+            return ResponseEntity.ok(creditActivityService.createActivity(currentUser.getId().longValue(), dto));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateGoal(@PathVariable Long id,
-                                        Authentication authentication,
-                                        @Valid @RequestBody GoalDto dto) {
+    public ResponseEntity<?> updateActivity(@PathVariable Long id,
+                                            Authentication authentication,
+                                            @Valid @RequestBody CreditActivityDto dto) {
         User currentUser = getCurrentUser(authentication);
         if (currentUser == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("用户未登录");
         }
         try {
-            GoalDto updated = goalService.updateGoal(id, currentUser.getId().longValue(), dto);
-            return ResponseEntity.ok(updated);
+            return ResponseEntity.ok(creditActivityService.updateActivity(id, currentUser.getId().longValue(), dto));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteGoal(@PathVariable Long id, Authentication authentication) {
+    public ResponseEntity<?> deleteActivity(@PathVariable Long id, Authentication authentication) {
         User currentUser = getCurrentUser(authentication);
         if (currentUser == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("用户未登录");
         }
         try {
-            goalService.archiveGoal(id, currentUser.getId().longValue());
+            creditActivityService.deleteActivity(id, currentUser.getId().longValue());
             Map<String, String> result = new HashMap<>();
-            result.put("message", "目标已归档");
+            result.put("message", "加分记录已删除");
             return ResponseEntity.ok(result);
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
