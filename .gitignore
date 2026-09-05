@@ -1,35 +1,44 @@
-# OS files
-.DS_Store
-Thumbs.db
+# ---------- 依赖与构建产物 ----------
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
+# ---------- 锁文件策略 ----------
+# 根 bun.lock 必须追踪:install.sh(standalone)与 README 安装流程都依赖它
+# 复现连贯的 @deepseek-ai rc.5 依赖闭包。
+# 同理追踪 .opencode/package.json 与 .opencode/bun.lock(工具依赖边界)。
 
-# Build outputs
-LifeComposer/target/
-LifeComposer/*.class
+# ---------- 运行时状态与审计(机器本地,永不提交)----------
+# deepseek_delegate 的任务状态与审计记录(含 context_hash、本机路径)
+.omo/deepseek-delegate/
+# 工作流编排状态:证据、start-work ledger、会话续接记录
+.omo/evidence/
+.omo/start-work/
+.omo/run-continuation/
 
-# Runtime database
-LifeComposer/data.db
-LifeComposer/data-*.db
-
-# Environment / secrets
+# ---------- 密钥 ----------
 .env
 .env.*
-*.key
 *.pem
-*.p12
-*.jks
+*.key
 
-# Logs
-*.log
-logs/
+# ---------- 系统与编辑器 ----------
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
 
-# Agent evidence (runtime artifacts, not planning artifacts)
-.sisyphus/evidence/
+# ---------- 安装脚本产物 ----------
+# install.sh 覆盖旧文件时的时间戳备份(*.bak.YYYYmmdd-HHMMSS)
+*.bak.*
 
-# Maven wrapper download cache (downloaded on first use)
-.mvn/wrapper/maven-wrapper.jar
+# ---------- 本地草稿 ----------
+*.local.md
+/scratch/

@@ -134,7 +134,8 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
         dto.setModel(config.getModel());
         dto.setContent(
                 "[Fallback] Request degraded: " + errorMsg
-                        + ". Original request: useCase='" + config + "'"
+                        + ". Original request: provider='" + config.getProvider()
+                        + "', model='" + config.getModel() + "'"
         );
         dto.setErrorMessage(errorMsg);
         return dto;

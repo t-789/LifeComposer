@@ -1,64 +1,65 @@
 #!/bin/bash
-# LifeComposer - Safe Local Startup Script
+# LifeComposer - Safe Startup Script
 #
-# This script starts the LifeComposer backend with local Ollama defaults.
-# All LLM use cases default to disabled (mock/fallback mode).
-# To use cloud LLMs, set the corresponding environment variables before running.
+# This script starts the LifeComposer backend with DeepSeek cloud defaults.
+# It loads a local .env file if present (copy from .env.example).
+# Only the QA and Chat use cases are enabled by default; the rest run in
+# mock/fallback mode until you enable them.
 #
-# Per-use-case configuration (set before running this script):
+# Per-use-case configuration (set in .env or export before running):
 #
-#   LLM_QA_PROVIDER=ollama       # Provider: ollama, deepseek, qwen, glm, openai
-#   LLM_QA_BASE_URL=http://localhost:11434/v1
-#   LLM_QA_MODEL=lfm2.5:8b
-#   LLM_QA_API_KEY_ENV=          # Name of env var holding API key
-#   LLM_QA_ENABLED=false
+#   LLM_QA_PROVIDER=deepseek
+#   LLM_QA_BASE_URL=https://api.deepseek.com/v1
+#   LLM_QA_MODEL=deepseek-v4-flash
+#   LLM_QA_API_KEY_ENV=DEEPSEEK_API_KEY   # Name of env var holding API key
+#   LLM_QA_ENABLED=true
 #
-#   LLM_PLANNING_PROVIDER=ollama
-#   LLM_PLANNING_BASE_URL=http://localhost:11434/v1
-#   LLM_PLANNING_MODEL=lfm2.5:8b
-#   LLM_PLANNING_API_KEY_ENV=
+#   LLM_PLANNING_PROVIDER=deepseek
+#   LLM_PLANNING_BASE_URL=https://api.deepseek.com/v1
+#   LLM_PLANNING_MODEL=deepseek-v4-flash
+#   LLM_PLANNING_API_KEY_ENV=DEEPSEEK_API_KEY
 #   LLM_PLANNING_ENABLED=false
 #
-#   LLM_PROFILE_PROVIDER=ollama
-#   LLM_PROFILE_BASE_URL=http://localhost:11434/v1
-#   LLM_PROFILE_MODEL=lfm2.5:8b
-#   LLM_PROFILE_API_KEY_ENV=
+#   LLM_PROFILE_PROVIDER=deepseek
+#   LLM_PROFILE_BASE_URL=https://api.deepseek.com/v1
+#   LLM_PROFILE_MODEL=deepseek-v4-flash
+#   LLM_PROFILE_API_KEY_ENV=DEEPSEEK_API_KEY
 #   LLM_PROFILE_ENABLED=false
 #
-#   LLM_SQL_PROVIDER=ollama
-#   LLM_SQL_BASE_URL=http://localhost:11434/v1
-#   LLM_SQL_MODEL=lfm2.5:8b
-#   LLM_SQL_API_KEY_ENV=
+#   LLM_SQL_PROVIDER=deepseek
+#   LLM_SQL_BASE_URL=https://api.deepseek.com/v1
+#   LLM_SQL_MODEL=deepseek-v4-flash
+#   LLM_SQL_API_KEY_ENV=DEEPSEEK_API_KEY
 #   LLM_SQL_ENABLED=false
 #
-#   LLM_CHAT_PROVIDER=ollama
-#   LLM_CHAT_BASE_URL=http://localhost:11434/v1
-#   LLM_CHAT_MODEL=lfm2.5:8b
-#   LLM_CHAT_API_KEY_ENV=
+#   LLM_CHAT_PROVIDER=deepseek
+#   LLM_CHAT_BASE_URL=https://api.deepseek.com/v1
+#   LLM_CHAT_MODEL=deepseek-v4-flash
+#   LLM_CHAT_API_KEY_ENV=DEEPSEEK_API_KEY
 #   LLM_CHAT_ENABLED=true
 #
-# Examples:
-#   # Use DeepSeek for Q&A:
-#   export LLM_QA_PROVIDER=deepseek
-#   export LLM_QA_BASE_URL=https://api.deepseek.com/v1
-#   export LLM_QA_MODEL=deepseek-chat
-#   export LLM_QA_API_KEY_ENV=DEEPSEEK_API_KEY
-#   export LLM_QA_ENABLED=true
+# Setup:
+#   cp .env.example .env
+#   # then add your DeepSeek API key to .env or export it:
 #   export DEEPSEEK_API_KEY=your-api-key-here
-#   ./run.sh
-#
-#   # Use all local Ollama defaults (current):
 #   ./run.sh
 
 cd "$(dirname "$0")" || exit 1
 
+# Load local environment variables
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+fi
+
 echo "=== LifeComposer Backend ==="
 echo "LLM Configuration:"
-echo "  QA:       ${LLM_QA_PROVIDER:-ollama} / ${LLM_QA_MODEL:-lfm2.5:8b} (${LLM_QA_ENABLED:-false})"
-echo "  Planning: ${LLM_PLANNING_PROVIDER:-ollama} / ${LLM_PLANNING_MODEL:-lfm2.5:8b} (${LLM_PLANNING_ENABLED:-false})"
-echo "  Profile:  ${LLM_PROFILE_PROVIDER:-ollama} / ${LLM_PROFILE_MODEL:-lfm2.5:8b} (${LLM_PROFILE_ENABLED:-false})"
-echo "  SQL:      ${LLM_SQL_PROVIDER:-ollama} / ${LLM_SQL_MODEL:-lfm2.5:8b} (${LLM_SQL_ENABLED:-false})"
-echo "  Chat:     ${LLM_CHAT_PROVIDER:-ollama} / ${LLM_CHAT_MODEL:-lfm2.5:8b} (${LLM_CHAT_ENABLED:-true})"
+echo "  QA:       ${LLM_QA_PROVIDER:-deepseek} / ${LLM_QA_MODEL:-deepseek-v4-flash} (${LLM_QA_ENABLED:-true})"
+echo "  Planning: ${LLM_PLANNING_PROVIDER:-deepseek} / ${LLM_PLANNING_MODEL:-deepseek-v4-flash} (${LLM_PLANNING_ENABLED:-false})"
+echo "  Profile:  ${LLM_PROFILE_PROVIDER:-deepseek} / ${LLM_PROFILE_MODEL:-deepseek-v4-flash} (${LLM_PROFILE_ENABLED:-false})"
+echo "  SQL:      ${LLM_SQL_PROVIDER:-deepseek} / ${LLM_SQL_MODEL:-deepseek-v4-flash} (${LLM_SQL_ENABLED:-false})"
+echo "  Chat:     ${LLM_CHAT_PROVIDER:-deepseek} / ${LLM_CHAT_MODEL:-deepseek-v4-flash} (${LLM_CHAT_ENABLED:-true})"
 echo ""
 
 # Inject LLM useCase config as Spring system properties so the
@@ -71,13 +72,15 @@ for uc in qa planning profile sql chat; do
     base_url_var="LLM_${UC_UPPER}_BASE_URL"
     model_var="LLM_${UC_UPPER}_MODEL"
     enabled_var="LLM_${UC_UPPER}_ENABLED"
+    api_key_env_var="LLM_${UC_UPPER}_API_KEY_ENV"
     
-    prov=${!prov_var:-ollama}
-    base_url=${!base_url_var:-http://localhost:11434/v1}
-    model=${!model_var:-lfm2.5:8b}
+    prov=${!prov_var:-deepseek}
+    base_url=${!base_url_var:-https://api.deepseek.com/v1}
+    model=${!model_var:-deepseek-v4-flash}
+    api_key_env=${!api_key_env_var:-DEEPSEEK_API_KEY}
     
-    # chat defaults to enabled; others default to disabled
-    if [ "$uc" = "chat" ]; then
+    # qa and chat default to enabled; others default to disabled
+    if [ "$uc" = "chat" ] || [ "$uc" = "qa" ]; then
         enabled=${!enabled_var:-true}
     else
         enabled=${!enabled_var:-false}
@@ -87,6 +90,7 @@ for uc in qa planning profile sql chat; do
     JVM_ARGS="$JVM_ARGS -Dllm.useCases.$uc.baseUrl=$base_url"
     JVM_ARGS="$JVM_ARGS -Dllm.useCases.$uc.model=$model"
     JVM_ARGS="$JVM_ARGS -Dllm.useCases.$uc.enabled=$enabled"
+    JVM_ARGS="$JVM_ARGS -Dllm.useCases.$uc.apiKeyEnv=$api_key_env"
 done
 
 ./mvnw spring-boot:run -Dspring-boot.run.jvmArguments="$JVM_ARGS"

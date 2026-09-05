@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AI 对话测试</title>
+    <!-- Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <!-- XSS sanitization -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <!-- Math formula rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -66,7 +73,6 @@
             word-break: break-word;
             line-height: 1.5;
             font-size: 15px;
-            white-space: pre-wrap;
         }
 
         .message.user {
@@ -74,6 +80,7 @@
             color: #000;
             margin-left: auto;
             border-radius: 12px 4px 12px 12px;
+            white-space: pre-wrap;
         }
 
         .message.assistant {
@@ -83,6 +90,25 @@
             border-radius: 4px 12px 12px 12px;
             box-shadow: 0 1px 2px rgba(0,0,0,0.08);
         }
+
+        /* Markdown rendering styles for assistant messages */
+        .message.assistant p { margin: 0 0 8px; }
+        .message.assistant p:last-child { margin-bottom: 0; }
+        .message.assistant h1, .message.assistant h2, .message.assistant h3 { margin: 8px 0 4px; }
+        .message.assistant h1 { font-size: 1.3em; }
+        .message.assistant h2 { font-size: 1.15em; }
+        .message.assistant h3 { font-size: 1.05em; }
+        .message.assistant ul, .message.assistant ol { padding-left: 20px; margin: 4px 0; }
+        .message.assistant li { margin: 2px 0; }
+        .message.assistant pre { background: #f5f5f5; padding: 8px 12px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+        .message.assistant code { font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 0.9em; }
+        .message.assistant :not(pre) > code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; }
+        .message.assistant table { border-collapse: collapse; margin: 6px 0; font-size: 0.9em; }
+        .message.assistant th, .message.assistant td { border: 1px solid #ddd; padding: 4px 8px; }
+        .message.assistant th { background: #f5f5f5; }
+        .message.assistant blockquote { border-left: 3px solid #ccc; padding-left: 10px; margin: 6px 0; color: #666; }
+        .message.assistant .katex-display { margin: 8px 0; overflow-x: auto; overflow-y: hidden; }
+        .message.assistant hr { border: none; border-top: 1px solid #ddd; margin: 8px 0; }
 
         .message.system {
             background: #FFF3E0;
@@ -200,6 +226,90 @@
         </div>
     </div>
     <script>
+        // Markdown + KaTeX rendering pipeline
+        function renderAssistantMessage(text) {
+            if (!text) return '';
+            
+            // Step 1: Protect math expressions from marked
+            var replacements = [];
+            var counter = 0;
+            var makeToken = function() { return '__MATH_' + (counter++) + '__'; };
+            
+            var processed = text;
+            
+            // Protect $$...$$ (block math)
+            processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, function(full, inner) {
+                var token = makeToken();
+                replacements.push({ token: token, html: renderKaTeX(inner.trim(), true) });
+                return '\n\n' + token + '\n\n';
+            });
+            
+            // Protect \[...\] (block math)
+            processed = processed.replace(/\\\[([\s\S]*?)\\\]/g, function(full, inner) {
+                var token = makeToken();
+                replacements.push({ token: token, html: renderKaTeX(inner.trim(), true) });
+                return '\n\n' + token + '\n\n';
+            });
+            
+            // Protect $...$ (inline math)
+            processed = processed.replace(/\$([^$\n]+?)\$/g, function(full, inner) {
+                var token = makeToken();
+                replacements.push({ token: token, html: renderKaTeX(inner.trim(), false) });
+                return token;
+            });
+            
+            // Protect \(...\) (inline math)
+            processed = processed.replace(/\\\(([^\n]+?)\\\)/g, function(full, inner) {
+                var token = makeToken();
+                replacements.push({ token: token, html: renderKaTeX(inner.trim(), false) });
+                return token;
+            });
+            
+            // Step 2: Render markdown
+            var html;
+            if (typeof marked !== 'undefined') {
+                html = marked.parse(processed);
+            } else {
+                // Fallback: basic newline handling
+                html = processed.replace(/\n/g, '<br>');
+            }
+            
+            // Step 3: Sanitize
+            if (typeof DOMPurify !== 'undefined') {
+                html = DOMPurify.sanitize(html, {
+                    USE_PROFILES: { html: true, mathMl: true, svg: false }
+                });
+            }
+            
+            // Step 4: Restore math tokens
+            for (var i = 0; i < replacements.length; i++) {
+                html = html.replaceAll(replacements[i].token, replacements[i].html);
+            }
+            
+            return html;
+        }
+
+        function renderKaTeX(expr, displayMode) {
+            if (typeof katex !== 'undefined' && typeof katex.renderToString === 'function') {
+                try {
+                    return katex.renderToString(expr, {
+                        displayMode: displayMode,
+                        throwOnError: false
+                    });
+                } catch (e) {
+                    return '<code>' + escapeHtml(expr) + '</code>';
+                }
+            }
+            // Fallback: return as code
+            return displayMode ? '<pre>' + escapeHtml(expr) + '</pre>' : '<code>' + escapeHtml(expr) + '</code>';
+        }
+
+        function escapeHtml(str) {
+            var div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         window.onload = function() {
             loadHistory();
         };
@@ -288,7 +398,11 @@
             const messageArea = document.getElementById('messageArea');
             const div = document.createElement('div');
             div.className = 'message ' + role;
-            div.textContent = content;
+            if (role === 'assistant') {
+                div.innerHTML = renderAssistantMessage(content);
+            } else {
+                div.textContent = content;
+            }
             messageArea.appendChild(div);
             scrollToBottom();
         }
