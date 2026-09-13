@@ -6,9 +6,12 @@ import org.apache.logging.log4j.Logger;
 import org.example.lifecomposer.Entity.ChatMessage;
 import org.example.lifecomposer.Entity.User;
 import org.example.lifecomposer.Repository.UserRepository;
+import org.example.lifecomposer.Service.ChatQuotaDecision;
+import org.example.lifecomposer.Service.ChatQuotaService;
 import org.example.lifecomposer.Service.ChatService;
 import org.example.lifecomposer.agent.AgentEventListener;
 import org.example.lifecomposer.agent.LlmUnavailableException;
+import org.example.lifecomposer.config.AppSecurityProperties;
 import org.example.lifecomposer.dto.ChatRequest;
 import org.example.lifecomposer.dto.ChatResponse;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -20,6 +23,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -29,18 +33,23 @@ import java.util.concurrent.ExecutorService;
 public class ChatController {
 
     private static final Logger LOG = LogManager.getLogger(ChatController.class);
-    private static final long SSE_TIMEOUT_MILLIS = 300_000L;
 
     private final ChatService chatService;
     private final UserRepository userRepository;
     private final ExecutorService chatStreamExecutor;
+    private final ChatQuotaService chatQuotaService;
+    private final AppSecurityProperties securityProperties;
 
     public ChatController(ChatService chatService,
                           UserRepository userRepository,
-                          @Qualifier("chatStreamExecutor") ExecutorService chatStreamExecutor) {
+                          @Qualifier("chatStreamExecutor") ExecutorService chatStreamExecutor,
+                          ChatQuotaService chatQuotaService,
+                          AppSecurityProperties securityProperties) {
         this.chatService = chatService;
         this.userRepository = userRepository;
         this.chatStreamExecutor = chatStreamExecutor;
+        this.chatQuotaService = chatQuotaService;
+        this.securityProperties = securityProperties;
     }
 
     @PostMapping("/send")
@@ -50,8 +59,13 @@ public class ChatController {
         if (userId == null) {
             return ResponseEntity.status(401).body(Map.of("error", "未登录"));
         }
+        ChatQuotaDecision quota = chatQuotaService.tryConsume(userId);
+        if (!quota.allowed()) {
+            return quotaResponse(quota);
+        }
         try {
-            ChatResponse response = chatService.sendMessage(userId, request.getMessage());
+            ChatResponse response = chatService.sendMessage(
+                    userId, request.getMessage(), effectiveMaxTokens(request.getMaxTokens()));
             return ResponseEntity.ok(response);
         } catch (LlmUnavailableException e) {
             return ResponseEntity.status(503).body(Map.of(
@@ -60,21 +74,24 @@ public class ChatController {
         }
     }
 
-    @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamMessage(@Valid @RequestBody ChatRequest request,
-                                    Authentication authentication) {
+    @PostMapping("/stream")
+    public ResponseEntity<?> streamMessage(@Valid @RequestBody ChatRequest request,
+                                           Authentication authentication) {
         Integer userId = resolveUserId(authentication);
         if (userId == null) {
-            SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
-            emitter.completeWithError(new IllegalStateException("未登录"));
-            return emitter;
+            return ResponseEntity.status(401).body(Map.of("error", "未登录"));
+        }
+        ChatQuotaDecision quota = chatQuotaService.tryConsume(userId);
+        if (!quota.allowed()) {
+            return quotaResponse(quota);
         }
 
-        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
+        int maxTokens = effectiveMaxTokens(request.getMaxTokens());
+        SseEmitter emitter = new SseEmitter(securityProperties.getSseTimeoutMillis());
         chatStreamExecutor.execute(() -> {
             SseAgentEventListener listener = new SseAgentEventListener(emitter);
             try {
-                chatService.streamMessage(userId, request.getMessage(), listener);
+                chatService.streamMessage(userId, request.getMessage(), listener, maxTokens);
                 send(emitter, "done", Map.of());
                 emitter.complete();
             } catch (ClientDisconnectedException e) {
@@ -87,7 +104,32 @@ public class ChatController {
                 completeWithErrorEvent(emitter, "INTERNAL_ERROR", "服务异常，请稍后重试");
             }
         });
-        return emitter;
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_EVENT_STREAM)
+                .body(emitter);
+    }
+
+    private ResponseEntity<?> quotaResponse(ChatQuotaDecision quota) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", quota.error());
+        body.put("message", quota.message());
+        body.put("retryAfterSeconds", quota.retryAfterSeconds());
+        body.put("dailyLimit", quota.dailyLimit());
+        body.put("usedToday", quota.usedToday());
+        body.put("remainingToday", quota.remainingToday());
+        body.put("minuteLimit", quota.minuteLimit());
+        body.put("minuteRemaining", quota.minuteRemaining());
+        return ResponseEntity.status(429)
+                .header("Retry-After", String.valueOf(quota.retryAfterSeconds()))
+                .body(body);
+    }
+
+    private int effectiveMaxTokens(Integer requestedMaxTokens) {
+        int limit = securityProperties.getChatMaxOutputTokens();
+        if (requestedMaxTokens == null) {
+            return limit;
+        }
+        return Math.max(1, Math.min(requestedMaxTokens, limit));
     }
 
     private void completeWithErrorEvent(SseEmitter emitter, String code, String message) {

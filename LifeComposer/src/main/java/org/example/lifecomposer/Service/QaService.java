@@ -69,7 +69,9 @@ public class QaService {
             response.setHistoryId(historyId);
             return response;
         } catch (Exception e) {
-            LogHelper.logError(LOG, feedbackService, "QA请求失败: " + request.getMessage(), e, "/api/qa/ask");
+            // Do not persist the full prompt in logs/feedback; it may contain
+            // user-sensitive content. Use-case and exception are enough for triage.
+            LogHelper.logError(LOG, feedbackService, "QA请求失败 useCase=" + useCase, e, "/api/qa/ask");
             return fallbackMock(userId, request, useCase, e.getMessage());
         }
     }

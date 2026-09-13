@@ -1,9 +1,12 @@
 # API 列表
 
-本文件为 LifeComposer 当前（v0.0.4, 2026-09-13）已实现端点的真实列表，与后端 Controller 保持一致。旧版论坛/点位/AI 端点已移除，不再列出。
+本文件为 LifeComposer 当前（v0.0.5, 2026-09-13）已实现端点的真实列表，与后端 Controller 保持一致。旧版论坛/点位/AI 端点已移除，不再列出。自 v0.0.5 起所有 POST/PUT/DELETE 需要 CSRF token。
+
+## CSRF 相关接口
+GET /api/csrf 返回当前会话 CSRF token（headerName/token），并写入可读的 XSRF-TOKEN Cookie（无需登录）
 
 ## 用户相关接口
-POST /api/users/register 用户注册（无需登录）
+POST /api/users/register 用户注册（无需登录；每 IP/分钟限速）
 POST /api/users/login 用户登录，设置 session（无需登录）
 POST /api/users/logout 用户登出（需登录）
 GET /api/users/current 获取当前用户信息，未登录返回 401（需登录）
@@ -13,6 +16,7 @@ PUT /api/users/{userId}/revoke-admin 撤销管理员权限（仅管理员）
 PUT /api/users/{userId}/ban 封禁用户，body 传 banTime（如 1d/30m/1y，0 为永久）（仅管理员）
 PUT /api/users/{userId}/unban 解封用户（仅管理员）
 POST /api/users/admin/reset-password/{userId} 管理员重置密码为 000000（仅管理员）
+POST /api/users/admin/chat-quota/reset/{userId} 管理员重置指定用户当日聊天额度（仅管理员，只允许当前 Asia/Shanghai 自然日）
 
 ## 反馈相关接口
 POST /api/feedback/submit 用户提交反馈（无需登录，可匿名）
@@ -35,8 +39,8 @@ GET /api/qa/health LLM 健康检查，返回 provider/model/enabled 等状态（
 POST /api/qa/ask 向 AI 提问，返回回答及 historyId（需登录）
 
 ## 对话 (Chat) 相关接口
-POST /api/chat/send 发送消息，返回 ChatResponse；LLM 不可用返回 HTTP 503 LLM_UNAVAILABLE（需登录）
-POST /api/chat/stream SSE 流式对话，事件：thinking_start/thinking_tick/thinking_end/tool_call/tool_result/token/assistant_message/error/done（需登录）
+POST /api/chat/send 发送消息，返回 ChatResponse；LLM 不可用返回 HTTP 503 LLM_UNAVAILABLE；超过分钟/日额度返回 HTTP 429（需登录，每请求计 1 次用量）
+POST /api/chat/stream SSE 流式对话，事件：thinking_start/thinking_tick/thinking_end/tool_call/tool_result/token/assistant_message/error/done；准入失败返回 HTTP 429 JSON（需登录，每请求计 1 次用量）
 GET /api/chat/history 获取当前用户的对话历史（含 user/assistant/tool 行）（需登录）
 DELETE /api/chat/context 清除当前用户的对话上下文（需登录）
 说明：/api/chat/* 不使用 fallback/mock；tool-call 以 assistant + tool 两条 chat_messages 持久化

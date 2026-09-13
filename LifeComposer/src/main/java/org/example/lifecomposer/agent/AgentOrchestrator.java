@@ -10,6 +10,7 @@ import org.example.lifecomposer.Service.FallbackLlmClient;
 import org.example.lifecomposer.Service.LlmClient;
 import org.example.lifecomposer.Service.LlmClientFactory;
 import org.example.lifecomposer.Service.LlmStreamListener;
+import org.example.lifecomposer.config.AppSecurityProperties;
 import org.example.lifecomposer.dto.ChatResponse;
 import org.example.lifecomposer.dto.LlmChatMessage;
 import org.example.lifecomposer.dto.LlmRequestDto;
@@ -61,19 +62,27 @@ public class AgentOrchestrator {
     private final ChatMessageRepository chatMessageRepository;
     private final LlmClientFactory llmClientFactory;
     private final ToolRegistry toolRegistry;
+    private final AppSecurityProperties securityProperties;
 
     public AgentOrchestrator(ChatMessageRepository chatMessageRepository,
                              LlmClientFactory llmClientFactory,
-                             ToolRegistry toolRegistry) {
+                             ToolRegistry toolRegistry,
+                             AppSecurityProperties securityProperties) {
         this.chatMessageRepository = chatMessageRepository;
         this.llmClientFactory = llmClientFactory;
         this.toolRegistry = toolRegistry;
+        this.securityProperties = securityProperties;
     }
 
     /** Legacy /api/chat/send path: runs the same agent loop without SSE. */
     public ChatResponse sendMessage(Integer userId, String userMessage) {
+        return sendMessage(userId, userMessage, null);
+    }
+
+    public ChatResponse sendMessage(Integer userId, String userMessage, Integer requestedMaxTokens) {
         List<LlmChatMessage> conversation = prepareConversation(userId, userMessage);
-        String content = runLoop(userId, conversation, NoopAgentEventListener.INSTANCE, false);
+        String content = runLoop(userId, conversation, NoopAgentEventListener.INSTANCE, false,
+                requestedMaxTokens);
         ChatResponse response = new ChatResponse();
         response.setRole("assistant");
         response.setContent(content);
@@ -85,8 +94,13 @@ public class AgentOrchestrator {
 
     /** Streaming /api/chat/stream path. */
     public void streamMessage(Integer userId, String userMessage, AgentEventListener listener) {
+        streamMessage(userId, userMessage, listener, null);
+    }
+
+    public void streamMessage(Integer userId, String userMessage, AgentEventListener listener,
+                              Integer requestedMaxTokens) {
         List<LlmChatMessage> conversation = prepareConversation(userId, userMessage);
-        runLoop(userId, conversation, listener, true);
+        runLoop(userId, conversation, listener, true, requestedMaxTokens);
     }
 
     private List<LlmChatMessage> prepareConversation(Integer userId, String userMessage) {
@@ -101,7 +115,8 @@ public class AgentOrchestrator {
     private String runLoop(Integer userId,
                            List<LlmChatMessage> conversation,
                            AgentEventListener listener,
-                           boolean streaming) {
+                           boolean streaming,
+                           Integer requestedMaxTokens) {
         LlmClient client = llmClientFactory.getClient("chat");
         if (client instanceof FallbackLlmClient || !client.isAvailable()) {
             throw new LlmUnavailableException("LLM 不可用，请稍后重试");
@@ -113,6 +128,7 @@ public class AgentOrchestrator {
             request.setUseCase("chat");
             request.setMessages(context);
             request.setTools(toolRegistry.definitions());
+            request.setMaxTokens(effectiveMaxTokens(requestedMaxTokens));
 
             LlmResponseDto response = streaming
                     ? callStreaming(client, request, listener)
@@ -174,6 +190,14 @@ public class AgentOrchestrator {
         }
 
         throw new LlmUnavailableException("MAX_TOOL_ROUNDS", "工具调用轮数超过上限，请稍后重试");
+    }
+
+    private int effectiveMaxTokens(Integer requestedMaxTokens) {
+        int configuredLimit = securityProperties.getChatMaxOutputTokens();
+        if (requestedMaxTokens == null) {
+            return configuredLimit;
+        }
+        return Math.max(1, Math.min(requestedMaxTokens, configuredLimit));
     }
 
     private LlmResponseDto callStreaming(LlmClient client,

@@ -180,6 +180,61 @@
       ============================================================
     -->
 
+    <!-- ========== v0.0.5 ========== -->
+    <div class="container">
+        <h1>v0.0.5 — Milestone 5：应用安全加固与 AI 使用控制</h1>
+        <p><em>2026 年 9 月 13 日</em></p>
+
+        <div class="stats-grid">
+            <div class="stat-item"><span class="stat-num">1</span><span class="stat-label">CSRF 同步令牌</span></div>
+            <div class="stat-item"><span class="stat-num">1</span><span class="stat-label">新增用量表</span></div>
+            <div class="stat-item"><span class="stat-num">2</span><span class="stat-label">聊天限流维度</span></div>
+            <div class="stat-item"><span class="stat-num">1024</span><span class="stat-label">max_tokens 上限</span></div>
+            <div class="stat-item"><span class="stat-num">1</span><span class="stat-label">管理员重置额度端点</span></div>
+            <div class="stat-item"><span class="stat-num">188</span><span class="stat-label">自动化测试</span></div>
+        </div>
+
+        <h2>CSRF 防护</h2>
+        <ul>
+            <li>启用 Spring Security CSRF，采用 <code>CookieCsrfTokenRepository</code>：可读的 <code>XSRF-TOKEN</code> Cookie + <code>GET /api/csrf</code> 暴露 token</li>
+            <li>新增 <code>X-XSRF-TOKEN</code> 头别名过滤器并映射到 Spring Security 默认头；<code>POST</code>/<code>PUT</code>/<code>DELETE</code> 缺少或携带不匹配 token 返回 403，<code>GET</code>/<code>HEAD</code>/<code>OPTIONS</code> 不受影响</li>
+            <li>新增 <code>external/static/csrf.js</code>，统一包装 <code>window.fetch</code>；login / chat_test / admin_main / feedback_management / user_management 页面已接入</li>
+            <li>Session Cookie 设置 <code>HttpOnly=true</code>、<code>SameSite=Lax</code>，HTTPS 部署可设 <code>Secure</code>；登录成功后重建 Session，防 Session Fixation</li>
+            <li>CORS 来源改为 <code>app.security.allowed-origins</code> 显式配置，禁止 <code>*</code> 搭配 credentials</li>
+        </ul>
+
+        <h2>聊天限流与每日用量</h2>
+        <ul>
+            <li>每个已认证用户每分钟最多 5 次、每天（Asia/Shanghai）最多 100 次聊天；<code>/api/chat/send</code> 与 <code>/api/chat/stream</code> 每次请求只计一次</li>
+            <li>新增 <code>chat_usage_daily(user_id, usage_date, request_count, updated_at)</code> 表与 <code>UNIQUE(user_id, usage_date)</code>；日额度用原子 upsert 控制并发，分钟级用单机滑动窗口</li>
+            <li>被 429 拒绝的请求不扣减日额度；LLM 失败、SSE 中断、客户端断开仍保留已准入请求的用量，避免绕过限额</li>
+            <li>429 body 返回 <code>error</code>、<code>message</code>、<code>retryAfterSeconds</code>、<code>dailyLimit</code>、<code>usedToday</code>、<code>remainingToday</code>、<code>minuteLimit</code>、<code>minuteRemaining</code></li>
+            <li><code>max_tokens</code> 服务端强制上限 1024；客户端传入更大值会被截断</li>
+        </ul>
+
+        <h2>管理员重置当日额度</h2>
+        <ul>
+            <li>新增 <code>POST /api/users/admin/chat-quota/reset/{userId}</code>，仅 <code>ROLE_ADMIN</code> 可调用</li>
+            <li>只允许重置当前 Asia/Shanghai 自然日，不接受日期参数，防止重置任意历史记录</li>
+            <li>返回新的剩余额度；重置事件写入审计日志（<code>AUDIT event=admin_reset_chat_quota</code>）</li>
+        </ul>
+
+        <h2>其他基础防护</h2>
+        <ul>
+            <li>注册按 IP 限速；登录连续失败按账号+IP 临时锁定并记录 <code>AUDIT event=login_*</code></li>
+            <li>聊天输入长度限制 5000 字符；SSE 超时可通过 <code>app.security.sse-timeout-millis</code> 配置</li>
+            <li>Agent 工具循环上限 8 次；工具参数继续由服务端白名单校验</li>
+            <li>管理员 API 保持 ADMIN 权限，并支持 <code>app.security.admin-intranet-only=true</code> 仅允许内网/回环访问</li>
+            <li>日志不再记录完整 QA prompt；限流、额度、登录失败、管理员重置均写审计日志，不记录密码/Session/API key</li>
+        </ul>
+
+        <h2>测试与验收</h2>
+        <ul>
+            <li>自动化测试 <strong>188 个，0 失败</strong>；新增 CSRF 403/有效 token、分钟/日额度、429 不扣量、Asia/Shanghai 跨午夜、管理员重置、并发日计数、max_tokens 截断、注册/登录限速等测试</li>
+            <li>原有 <code>/api/chat/send</code>、<code>/api/chat/stream</code>、导入 CLI、RAG、Agent tool-use 测试全部保持通过</li>
+        </ul>
+    </div>
+
     <!-- ========== v0.0.4 ========== -->
     <div class="container">
         <h1>v0.0.4 — 数据导入 CLI、RAG 检索、Agent Tool-use 与 SSE 过程展示</h1>

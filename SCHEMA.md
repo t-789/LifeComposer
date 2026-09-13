@@ -2,7 +2,7 @@
 
 ## 概述
 
-本系统面向北邮大学生成长规划场景，基于 SQLite 数据库存储。当前设计包含 11 张表，全部已实现；v0.0.4 为 `rag_chunks` 增加 embedding 相关字段：
+本系统面向北邮大学生成长规划场景，基于 SQLite 数据库存储。当前设计包含 12 张表，全部已实现；v0.0.4 为 `rag_chunks` 增加 embedding 字段，v0.0.5 增加聊天用量表：
 
 | 表名 | 用途 |
 |------|------|
@@ -17,6 +17,7 @@
 | `rag_chunks` | RAG 检索切片（v0.0.4 增加 embedding_json / embedding_model / embedding_dimensions / embedding_status / embedding_error / embedding_updated_at / content_hash） |
 | `capability_tags` | 标准能力标签字典（10 个标签 × L1/L2/L3） |
 | `capability_reference` | 能力映射/模板/大类字典（tags_to_merge / skill_mapping / skill_profiles / role_profiles / major_categories / _meta） |
+| `chat_usage_daily` | v0.0.5 聊天每日用量与额度计数（user_id + usage_date 唯一） |
 
 > **注意**：SQLite 当前 `PRAGMA foreign_keys = OFF`（默认），表之间的 `REFERENCES` 约束仅作为逻辑关联标注，运行时不强制。
 
@@ -508,6 +509,43 @@ CREATE TABLE capability_reference (
 
 ---
 
+### 12. `chat_usage_daily`（聊天每日用量表）✅ v0.0.5 新增
+
+Milestone 5 的聊天配额持久层。分钟级限流在单机内存中完成，日额度必须落库并使用原子 upsert，防止并发超额。
+
+```sql
+CREATE TABLE IF NOT EXISTS chat_usage_daily (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id       INTEGER NOT NULL,
+  usage_date    TEXT NOT NULL,              -- Asia/Shanghai 自然日，格式 YYYY-MM-DD
+  request_count INTEGER NOT NULL DEFAULT 0,
+  updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, usage_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_usage_date ON chat_usage_daily(usage_date);
+```
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `user_id` | 用户 ID | 5 |
+| `usage_date` | 自然日（Asia/Shanghai） | '2026-09-13' |
+| `request_count` | 当日已准入的聊天请求数 | 12 |
+| `updated_at` | 最近一次计数/重置时间 | 2026-09-13 22:00:00 |
+
+**并发控制**：`ChatUsageRepository.tryIncrement()` 使用 SQLite upsert：
+```sql
+INSERT INTO chat_usage_daily(user_id, usage_date, request_count, updated_at)
+VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+ON CONFLICT(user_id, usage_date) DO UPDATE SET
+  request_count = request_count + 1,
+  updated_at = CURRENT_TIMESTAMP
+WHERE request_count < ?;
+```
+返回 1 表示准入成功，0 表示已达日上限；被拒绝的请求不增加计数。管理员重置只允许当前自然日。
+
+---
+
 ## 建表顺序
 
 由于存在外键依赖，建表应遵循以下顺序：
@@ -524,6 +562,7 @@ CREATE TABLE capability_reference (
 9. rag_chunks（依赖 resources.resource_id（可选））
 10. capability_tags（无外部依赖）
 11. capability_reference（无外部依赖，字典内容弱引用 capability_tags.name）
+12. chat_usage_daily（无外部依赖）
 ```
 
 > 上述建表逻辑在 `DatabaseInitializer.init()` 方法中通过 `createXxxTableIfNeeded()` 逐步执行。

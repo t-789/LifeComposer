@@ -9,6 +9,7 @@ import org.apache.logging.log4j.Logger;
 import org.example.lifecomposer.Repository.CapabilityReferenceRepository;
 import org.example.lifecomposer.Repository.CapabilityTagRepository;
 import org.example.lifecomposer.Repository.ChatMessageRepository;
+import org.example.lifecomposer.Repository.ChatUsageRepository;
 import org.example.lifecomposer.Repository.CollegeCreditRuleRepository;
 import org.example.lifecomposer.Repository.CreditActivityRepository;
 import org.example.lifecomposer.Repository.FeedbackRepository;
@@ -28,6 +29,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
@@ -49,6 +52,8 @@ public class DatabaseInitializer {
     private final RagChunkRepository ragChunkRepository;
     private final CapabilityTagRepository capabilityTagRepository;
     private final CapabilityReferenceRepository capabilityReferenceRepository;
+    private final ChatUsageRepository chatUsageRepository;
+    private final AppSecurityProperties securityProperties;
     private final PasswordEncoder passwordEncoder;
     private final boolean importMode;
 
@@ -64,6 +69,8 @@ public class DatabaseInitializer {
                                RagChunkRepository ragChunkRepository,
                                CapabilityTagRepository capabilityTagRepository,
                                CapabilityReferenceRepository capabilityReferenceRepository,
+                               ChatUsageRepository chatUsageRepository,
+                               AppSecurityProperties securityProperties,
                                PasswordEncoder passwordEncoder,
                                Environment environment) {
         this.jdbcTemplate = jdbcTemplate;
@@ -78,6 +85,8 @@ public class DatabaseInitializer {
         this.ragChunkRepository = ragChunkRepository;
         this.capabilityTagRepository = capabilityTagRepository;
         this.capabilityReferenceRepository = capabilityReferenceRepository;
+        this.chatUsageRepository = chatUsageRepository;
+        this.securityProperties = securityProperties;
         this.passwordEncoder = passwordEncoder;
         this.importMode = environment.getProperty("lifecomposer.import.mode", Boolean.class, false);
     }
@@ -98,6 +107,14 @@ public class DatabaseInitializer {
         ragChunkRepository.createTableIfNeeded();
         capabilityTagRepository.createTableIfNeeded();
         capabilityReferenceRepository.createTableIfNeeded();
+        chatUsageRepository.createTableIfNeeded();
+
+        String usageCutoff = LocalDate.now(ZoneId.of(securityProperties.getChatUsageZone()))
+                .minusDays(securityProperties.getChatUsageRetentionDays()).toString();
+        int expiredUsageRows = chatUsageRepository.deleteOlderThan(usageCutoff);
+        if (expiredUsageRows > 0) {
+            LOG.info("Removed {} expired chat usage rows before {}", expiredUsageRows, usageCutoff);
+        }
 
         migrateLegacyGoals();
 

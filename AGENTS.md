@@ -4,7 +4,7 @@
 
 大学生成长规划助手后端。基于 Spring Boot 4.0.5 + SQLite + JdbcTemplate。
 
-### 当前状态（2026-09-13 v0.0.4 后）
+### 当前状态（2026-09-13 v0.0.5 后）
 
 基础后端 + 数据底座 + Agent tool-use 已搭建完成，包含：
 - 用户系统（注册/登录/Session/Admin）
@@ -14,13 +14,16 @@
 - 问答 API（`/api/qa/health`、`/api/qa/ask`；qa 仍保留可配置 fallback）
 - AI 对话 API（`/api/chat/send`、`/api/chat/stream` SSE、`/api/chat/history`、`/api/chat/context`）
 - 成长数据底座（6 张表：college_credit_rules、credit_activities、resources、rag_chunks、capability_tags、capability_reference）
+- **应用安全加固（Milestone 5）**：CSRF（XSRF-TOKEN Cookie + X-XSRF-TOKEN 头 + `/api/csrf`）、Session Cookie HttpOnly/SameSite=Lax、登录后重建 Session、显式 CORS 来源
+- **AI 使用控制**：每用户 5 次/分钟 + 100 次/天（Asia/Shanghai），新增 `chat_usage_daily` 用量表；超限 429；`max_tokens` 强制 1024；管理员可重置当日额度并写审计日志
+- **基础防护**：注册/登录限速与失败临时锁定、SSE 超时可配置、输入长度限制、管理员 API 可选内网限制
 - **独立数据导入 CLI**（`DataImportCli` + `import.sh`，`--import-dir` 执行完即退出，不启动 Web、不初始化默认管理员）
 - **Ollama embedding + RAG 检索**（rag_chunks 7 个新字段 + `RagSearchService`；topK=5、minSimilarity=0.2）
 - **Agent 多轮 tool-use**（5 个白名单只读工具 + ToolRegistry + AgentOrchestrator，最多 8 轮）
 - **SSE 流式过程展示**（thinking 计时 / tool_call / tool_result / token / assistant_message / error / done）
 - 生成式 LLM 默认统一切换 DeepSeek `deepseek-flash`；`/api/chat/*` 不使用 fallback（503 / SSE error）
 - 启动脚本 `run.sh`（环境变量加载，密钥安全）
-- 164 个自动化测试，全部通过
+- 188 个自动化测试，全部通过
 
 ### 下一阶段目标
 
@@ -177,9 +180,11 @@ curl -s http://localhost:18000/api/qa/health
 
 ### Security 配置
 - 认证方式：JSESSIONID Cookie（Session-based）
-- CORS：仅限本地开发环境（`http://localhost:*`, `http://127.0.0.1:*`, `https://localhost:*`）
+- **CSRF（v0.0.5）**：启用 Spring Security CSRF；`XSRF-TOKEN` Cookie + `X-XSRF-TOKEN` 头；前端统一加载 `/csrf.js`；状态变更请求无 token/错 token 返回 403
+- **Session Cookie**：`HttpOnly=true`、`SameSite=Lax`、HTTPS 时 `Secure`；登录成功重建 Session
+- CORS：默认本地开发环境（`http://localhost:*`, `http://127.0.0.1:*`, `https://localhost:*`），可通过 `app.security.allowed-origins` 显式配置
 - 详细端点权限（公开/ADMIN/已登录）：详见 [`API.md`](./API.md) 的「认证与权限说明」章节
-- 公开端点：`/api/users/register`, `/api/users/login`, `/api/feedback/submit`, `/api/feedback/system-error`, `/api/qa/health`
+- 公开端点：`/api/csrf`, `/api/users/register`, `/api/users/login`, `/api/feedback/submit`, `/api/feedback/system-error`, `/api/qa/health`
 - 需要 ADMIN 角色：反馈管理、用户管理、封禁操作、POST `/api/college-credit-rules`（控制器内校验 ROLE_ADMIN）
 - 需要认证：`/api/users/current`, `/api/users/logout`, `/api/profiles/**`, `/api/planning/**`, `/api/qa/ask`, `/api/chat/**`, `/api/college-credit-rules/**`, `/api/credit-activities/**`, `/api/resources/**`, `/api/rag-chunks/**`, `/api/capability-tags/**`, `/api/capability-reference/**`
 - JSESSIONID Cookie 传递认证状态
@@ -198,7 +203,7 @@ curl -s http://localhost:18000/api/qa/health
 - 测试基类：`BaseControllerTest`（MockMvc + SecurityMockMvc + 独立测试 DB）
 - 隔离数据库：`target/test-data.db`（通过 `application-test.properties` 配置）
 - **生产数据永不污染**：测试不触碰 `data.db`，启动时通过 `before/after` 时间戳验证
-- 全量测试 164 个，通过 `./mvnw test -Dspring.profiles.active=test` 一键运行
+- 全量测试 188 个，通过 `./mvnw test -Dspring.profiles.active=test` 一键运行
 
 ### Run Script (`run.sh`)
 - 所有 LLM 配置通过环境变量注入：`LLM_QA_PROVIDER`, `LLM_QA_BASE_URL`, `LLM_QA_MODEL`, `LLM_QA_API_KEY_ENV`, `LLM_QA_ENABLED`（qa/planning/profile/sql/chat 五个用途重复此模式）
@@ -259,3 +264,4 @@ curl -s http://localhost:18000/api/qa/health
 | v0.0.2 | 2026-06-28 | AI 对话原型（chat_messages + /api/chat）+ Log4j2 日志系统 + 缺陷修复 |
 | v0.0.3 | 2026-09-05 | 移除独立 goals 表并入画像；新增成长数据底座 6 表（加分规则/记录、资源、RAG、能力字典）与基础 API；文档同步 |
 | v0.0.4 | 2026-09-13 | 独立数据导入 CLI；Ollama embedding + SQLite RAG 检索；Agent 多轮 tool-use；`/api/chat/stream` SSE 与 chat_test.html 过程展示；生成用途切 deepseek-flash，`/api/chat/*` 禁止 fallback；164 测试全绿 |
+| v0.0.5 | 2026-09-13 | Milestone 5 安全加固：CSRF、Session 加固、聊天分钟/每日限流与 chat_usage_daily、max_tokens=1024、管理员重置当日额度、注册/登录限速与审计日志；188 测试全绿 |

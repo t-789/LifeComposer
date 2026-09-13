@@ -37,6 +37,7 @@
 - **Embedding**：本地 Ollama `nomic-embed-text-v2-moe:latest`，固定 `POST /v1/embeddings`，向量存 SQLite JSON
 - **生成式 LLM**：v0.0.4 起默认统一切换 DeepSeek `deepseek-flash`；`/api/chat/*` 不使用 fallback
 - **Agent**：多轮 tool-use（白名单只读工具）+ SSE 流式过程展示，v0.0.4 已实现
+- **安全**：v0.0.5 起 CSRF 同步令牌、Session Cookie 加固、注册/登录限速；聊天 5/分钟 + 100/天（Asia/Shanghai）与 `max_tokens=1024`
 - **前端**：待定（App / Web）
 
 ## 进度规划
@@ -47,6 +48,7 @@
 | v0.0.2 | 2026-06-28 | AI 对话原型 + 日志系统 ✅ |
 | v0.0.3 | 2026-09-05 | 成长数据底座 6 表 + API ✅ |
 | v0.0.4 | 2026-09-13 | 导入 CLI + Ollama embedding/RAG + Agent tool-use + SSE + deepseek-flash ✅ |
+| v0.0.5 | 2026-09-13 | Milestone 5 安全加固：CSRF、Session、注册/登录限速、聊天分钟/日额度、管理员重置、审计日志 ✅ |
 | 后续 | 持续 | 适配算法、问卷/访谈、系统测试、反馈优化、互勉提醒 |
 
 ## 与当前代码的关系

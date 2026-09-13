@@ -7,6 +7,7 @@ import org.example.lifecomposer.Service.FallbackLlmClient;
 import org.example.lifecomposer.Service.LlmClient;
 import org.example.lifecomposer.Service.LlmClientFactory;
 import org.example.lifecomposer.Service.LlmStreamListener;
+import org.example.lifecomposer.config.AppSecurityProperties;
 import org.example.lifecomposer.dto.ChatResponse;
 import org.example.lifecomposer.dto.LlmChatMessage;
 import org.example.lifecomposer.dto.LlmRequestDto;
@@ -39,7 +40,7 @@ class AgentOrchestratorTest {
         when(factory.getClient("chat")).thenReturn(client);
 
         ToolRegistry registry = new ToolRegistry(List.of(new FakeSearchResourcesTool()));
-        AgentOrchestrator orchestrator = new AgentOrchestrator(repository, factory, registry);
+        AgentOrchestrator orchestrator = new AgentOrchestrator(repository, factory, registry, new AppSecurityProperties());
 
         ChatResponse response = orchestrator.sendMessage(1, "帮我找数学建模");
 
@@ -82,7 +83,7 @@ class AgentOrchestratorTest {
         when(factory.getClient("chat")).thenReturn(client);
 
         ToolRegistry registry = new ToolRegistry(List.of(new FakeSearchResourcesTool()));
-        AgentOrchestrator orchestrator = new AgentOrchestrator(repository, factory, registry);
+        AgentOrchestrator orchestrator = new AgentOrchestrator(repository, factory, registry, new AppSecurityProperties());
 
         assertEquals("done", orchestrator.sendMessage(1, "查两个方向").getContent());
 
@@ -118,7 +119,7 @@ class AgentOrchestratorTest {
         when(factory.getClient("chat")).thenReturn(client);
 
         ToolRegistry registry = new ToolRegistry(List.of(new FakeSearchResourcesTool()));
-        AgentOrchestrator orchestrator = new AgentOrchestrator(repository, factory, registry);
+        AgentOrchestrator orchestrator = new AgentOrchestrator(repository, factory, registry, new AppSecurityProperties());
 
         assertEquals("done", orchestrator.sendMessage(1, "两轮各调用一个工具").getContent());
 
@@ -146,7 +147,7 @@ class AgentOrchestratorTest {
         when(factory.getClient("chat")).thenReturn(client);
 
         ToolRegistry registry = new ToolRegistry(List.of());
-        AgentOrchestrator orchestrator = new AgentOrchestrator(repository, factory, registry);
+        AgentOrchestrator orchestrator = new AgentOrchestrator(repository, factory, registry, new AppSecurityProperties());
         RecordingAgentEventListener listener = new RecordingAgentEventListener();
 
         orchestrator.streamMessage(1, "hi", listener);
@@ -167,7 +168,7 @@ class AgentOrchestratorTest {
         when(factory.getClient("chat")).thenReturn(new CompletingStreamingLlmClient(textResponse("answer")));
 
         AgentOrchestrator orchestrator = new AgentOrchestrator(
-                repository, factory, new ToolRegistry(List.of()));
+                repository, factory, new ToolRegistry(List.of()), new AppSecurityProperties());
         AgentEventListener failingListener = new AgentEventListener() {
             @Override
             public void onAssistantMessage(String content, String createTime) {
@@ -192,7 +193,8 @@ class AgentOrchestratorTest {
         when(factory.getClient("chat")).thenReturn(new CompletingStreamingLlmClient(toolCallResponse()));
 
         AgentOrchestrator orchestrator = new AgentOrchestrator(
-                repository, factory, new ToolRegistry(List.of(new FakeSearchResourcesTool())));
+                repository, factory, new ToolRegistry(List.of(new FakeSearchResourcesTool())),
+                new AppSecurityProperties());
         AgentEventListener failingListener = new AgentEventListener() {
             @Override
             public void onToolCall(String callId, String name, String description, String argumentsJson) {
@@ -219,10 +221,40 @@ class AgentOrchestratorTest {
         when(factory.getClient("chat")).thenReturn(new FallbackLlmClient("deepseek", "deepseek-flash"));
 
         AgentOrchestrator orchestrator = new AgentOrchestrator(
-                repository, factory, new ToolRegistry(List.of()));
+                repository, factory, new ToolRegistry(List.of()), new AppSecurityProperties());
 
         assertThrows(LlmUnavailableException.class,
                 () -> orchestrator.sendMessage(1, "你好"));
+    }
+
+    @Test
+    void capsRequestedMaxTokensToConfiguredLimit() {
+        ChatMessageRepository repository = mockRepository(new ArrayList<>());
+        LlmClientFactory factory = mock(LlmClientFactory.class);
+        ScriptedLlmClient client = new ScriptedLlmClient(List.of(textResponse("ok")));
+        when(factory.getClient("chat")).thenReturn(client);
+
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                repository, factory, new ToolRegistry(List.of()), new AppSecurityProperties());
+
+        orchestrator.sendMessage(1, "hi", 9999);
+
+        assertEquals(1024, client.requests.get(0).getMaxTokens());
+    }
+
+    @Test
+    void keepsSmallerClientMaxTokens() {
+        ChatMessageRepository repository = mockRepository(new ArrayList<>());
+        LlmClientFactory factory = mock(LlmClientFactory.class);
+        ScriptedLlmClient client = new ScriptedLlmClient(List.of(textResponse("ok")));
+        when(factory.getClient("chat")).thenReturn(client);
+
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                repository, factory, new ToolRegistry(List.of()), new AppSecurityProperties());
+
+        orchestrator.sendMessage(1, "hi", 100);
+
+        assertEquals(100, client.requests.get(0).getMaxTokens());
     }
 
     private ChatMessageRepository mockRepository(List<ChatMessage> stored) {

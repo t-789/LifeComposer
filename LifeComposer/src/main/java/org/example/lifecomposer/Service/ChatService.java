@@ -34,8 +34,17 @@ public class ChatService {
         return agentOrchestrator.sendMessage(userId, userMessage);
     }
 
+    public ChatResponse sendMessage(Integer userId, String userMessage, Integer requestedMaxTokens) {
+        return agentOrchestrator.sendMessage(userId, userMessage, requestedMaxTokens);
+    }
+
     public void streamMessage(Integer userId, String userMessage, AgentEventListener listener) {
         agentOrchestrator.streamMessage(userId, userMessage, listener);
+    }
+
+    public void streamMessage(Integer userId, String userMessage,
+                              AgentEventListener listener, Integer requestedMaxTokens) {
+        agentOrchestrator.streamMessage(userId, userMessage, listener, requestedMaxTokens);
     }
 
     public List<ChatMessage> getHistory(Integer userId) {

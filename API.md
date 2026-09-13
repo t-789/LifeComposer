@@ -1,6 +1,6 @@
 # API 端点清单
 
-> v0.0.3 当前已实现端点（2026-09-05 同步）。与各 Controller 及 WebSecurityConfig 保持一致。
+> v0.0.5 当前已实现端点（2026-09-13 同步）。与各 Controller 及 WebSecurityConfig 保持一致。Milestone 5 起所有状态变更请求需要 CSRF token。
 
 ---
 
@@ -18,6 +18,8 @@
 | PUT | `/api/users/{userId}/ban` | ADMIN | 封禁（时间格式：`1d`, `30m`, `1y`，`0` 为永久） |
 | PUT | `/api/users/{userId}/unban` | ADMIN | 解封 |
 | POST | `/api/users/admin/reset-password/{userId}` | ADMIN | 重置密码为 000000 |
+| POST | `/api/users/admin/chat-quota/reset/{userId}` | ADMIN | v0.0.5：重置指定用户当前 Asia/Shanghai 自然日的聊天额度，返回新的剩余额度 |
+| GET | `/api/csrf` | 无 | v0.0.5：返回当前会话的 CSRF token（headerName/token），并写入可读的 XSRF-TOKEN Cookie |
 
 ## 反馈管理
 
@@ -58,8 +60,8 @@
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| POST | `/api/chat/send` | 已登录 | 兼容旧客户端的一次性 JSON；内部复用同一 Agent 多轮 tool-use 逻辑。LLM 不可用时返回 HTTP 503 `{"error":"LLM_UNAVAILABLE","message":"LLM 不可用，请稍后重试"}` |
-| POST | `/api/chat/stream` | 已登录 | SSE 流式对话。事件：`thinking_start` / `thinking_tick`(可选) / `thinking_end` / `tool_call` / `tool_result` / `token` / `assistant_message` / `error` / `done` |
+| POST | `/api/chat/send` | 已登录 | 兼容旧客户端的一次性 JSON；内部复用同一 Agent 多轮 tool-use 逻辑。LLM 不可用时返回 HTTP 503 `{"error":"LLM_UNAVAILABLE",...}`；超过分钟/日额度返回 HTTP 429，body 含 retryAfterSeconds / remainingToday |
+| POST | `/api/chat/stream` | 已登录 | SSE 流式对话。事件：`thinking_start` / `thinking_tick`(可选) / `thinking_end` / `tool_call` / `tool_result` / `token` / `assistant_message` / `error` / `done`；准入失败返回 HTTP 429 JSON 而不是 SSE |
 | GET | `/api/chat/history` | 已登录 | 获取当前用户的对话历史（`chat_messages` 按时间稳定排序）；包含 user / assistant / tool 行 |
 | DELETE | `/api/chat/context` | 已登录 | 清除当前用户的对话上下文，返回 `{"deleted": n}` |
 
@@ -69,6 +71,12 @@
 > - 持久化顺序：SSE 场景下先成功发送 `tool_call` / `tool_result` / `assistant_message` 事件，再写入数据库；`tool_call` 与对应 `tool_result` 成对原子写入，浏览器断开时不会留下未送达或不成对的 tool/assistant 行。非流式 `/api/chat/send` 直接写入。
 > - 多工具与轮次边界：同一轮返回多个工具调用时，写入数据库仍按每次调用两条记录，并在 tool_call/tool_result JSON 中携带 `turnId`；拼装下一轮 LLM 上下文时按 `turnId` 分组，同一轮合并为一条带多个 `tool_calls` 的 assistant 消息 + 多条 tool 结果，不同轮次保持独立，符合 OpenAI/DeepSeek 协议。旧数据无 `turnId` 时回退为连续记录分组。
 > - thinking 计时状态、未完成 assistant 文本不落库；连接中断时保留已完整写入的 user 消息和已成功送达的工具调用记录。
+>
+> **v0.0.5 配额说明**：
+> - 每个已认证用户每分钟最多 5 次聊天，每天（Asia/Shanghai）最多 100 次；`/api/chat/send` 与 `/api/chat/stream` 每次请求只计一次。
+> - 被 429 拒绝的请求不扣减日额度；LLM 失败、SSE 中断和客户端断开仍保留已准入请求的用量，避免通过失败绕过限额。
+> - 服务端强制 `max_tokens=1024`；客户端传入更大的 `maxTokens` 会被截断。
+> - 管理员可用 `POST /api/users/admin/chat-quota/reset/{userId}` 重置当前自然日额度，并写入审计日志。
 
 ## 加分规则 (College Credit Rules)
 
@@ -127,11 +135,21 @@
 
 ---
 
+## CSRF 防护（v0.0.5）
+
+- 服务端使用 `CookieCsrfTokenRepository`，通过可读的 `XSRF-TOKEN` Cookie + `GET /api/csrf` 暴露 token。
+- 前端统一加载 `/csrf.js`，包装 `window.fetch`，对 `POST` / `PUT` / `DELETE` 自动发送 `X-XSRF-TOKEN` 头。
+- `GET` / `HEAD` / `OPTIONS` 不需要 CSRF token；其余状态变更请求缺少或携带不匹配 token 时返回 403。
+- Session Cookie 设置 `HttpOnly=true`、`SameSite=Lax`；HTTPS 部署时设置 `SESSION_COOKIE_SECURE=true` / `CSRF_COOKIE_SECURE=true`。`XSRF-TOKEN` 需要被同源 JS 读取，因此不设为 HttpOnly。
+- CORS 允许来源通过 `app.security.allowed-origins` 显式配置，禁止使用 `*` 搭配 credentials。
+- 登录成功后重建 Session，防止 Session Fixation。
+
 ## 认证与权限说明
 
-- **公开端点**：`/api/users/register`, `/api/users/login`, `/api/feedback/submit`, `/api/feedback/system-error`, `/api/qa/health`
+- **公开端点**：`/api/users/register`, `/api/users/login`, `/api/csrf`, `/api/feedback/submit`, `/api/feedback/system-error`, `/api/qa/health`
 - **需要 ADMIN 角色**：`/api/users/all`, `/api/users/*/grant-admin`, `/api/users/*/revoke-admin`, `/api/users/*/ban`, `/api/users/*/unban`, `/api/users/admin/**`, `/api/feedback/all`, `/api/feedback/type/**`, `/api/feedback/*/resolve`, `POST /api/college-credit-rules`
 - **需要认证**：`/api/users/current`, `/api/users/logout`, `/api/profiles/**`, `/api/planning/**`, `/api/qa/ask`, `/api/chat/**`, `/api/college-credit-rules/**`（除 POST 管理外）, `/api/credit-activities/**`, `/api/resources/**`, `/api/rag-chunks/**`, `/api/capability-tags/**`, `/api/capability-reference/**`, `/front/**`
 - **v0.0.3 变更**：原目标管理端点相关认证匹配已随 goals 表一并移除；新增 6 个 `/api` 前缀的认证配置（college-credit-rules / credit-activities / resources / rag-chunks / capability-tags / capability-reference）
 - **认证机制**：JSESSIONID Cookie 传递认证状态
-- **CORS 限制**：本地开发环境（`http://localhost:*`, `http://127.0.0.1:*`, `https://localhost:*`）
+- **CORS 限制**：默认本地开发环境（`http://localhost:*`, `http://127.0.0.1:*`, `https://localhost:*`），可通过 `app.security.allowed-origins` 显式覆盖
+- **限流与额度**：注册（每 IP/分钟）、登录（连续失败临时锁定）、聊天（每用户 5/分钟 + 100/天），详见对应章节
