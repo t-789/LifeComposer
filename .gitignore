@@ -43,3 +43,28 @@ Desktop.ini
 *.local.md
 /scratch/
 /plans/
+
+# ---------- 非代码资产 / 本地资料(不入库) ----------
+# agent 工作流、工具与编辑器状态
+/.omo/
+/.opencode/
+/.sisyphus/
+/tests/
+# 数据交付、原始资料、脚本与本地演示
+/draft/
+/dsh/
+/raw/
+/scripts/
+/样例/
+/数学公式显示/
+/数学公式展示/
+# 与代码无直接关联的立项/调研文档
+/AGENTS copy.md
+/AGENTS-v0.0.3-draft.md
+/立项申请书.md
+/立项申请书2.0(1).pdf
+/立项申请书2.0(3).docx
+/调研报告摘要-立项书版.docx
+/大学生成长路径与竞赛参与需求调研-默认报告.pdf
+# 工具快照
+/LifeComposer/.merkle-snapshot.json
