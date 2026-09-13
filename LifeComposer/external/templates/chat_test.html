@@ -12,6 +12,13 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
     <style>
+        :root {
+            /* 大屏下内容列（消息/输入框）的最大宽度；浏览器更窄时完全跟随窗口宽度 */
+            --content-max: 1000px;
+            /* 窄屏时的左右安全边距 */
+            --page-pad: 16px;
+        }
+
         * {
             box-sizing: border-box;
             margin: 0;
@@ -25,9 +32,11 @@
         }
 
         .chat-container {
-            max-width: 500px;
-            margin: 0 auto;
+            /* 外壳铺满浏览器宽度：窄屏满宽，宽屏也不再用固定 500px 手机宽度 */
+            width: 100%;
+            max-width: 100%;
             height: 100vh;
+            height: 100dvh; /* 移动端浏览器地址栏收起/展开时高度自适应 */
             display: flex;
             flex-direction: column;
             background: #ededed;
@@ -67,7 +76,8 @@
         }
 
         .message {
-            max-width: 75%;
+            /* 跟随窗口缩放，同时限制超宽屏下的行长，避免一行文字过长 */
+            max-width: min(75%, 720px);
             padding: 8px 12px;
             margin-bottom: 10px;
             word-break: break-word;
@@ -135,6 +145,16 @@
             align-items: flex-end;
             border-top: 1px solid #E0E0E0;
             flex-shrink: 0;
+        }
+
+        /* 三段式对齐：外壳（绿色标题栏/消息区/输入栏）铺满宽度，
+           内容列在宽屏居中并限制阅读宽度，窄屏自动退化为满宽 + 安全边距。
+           max() 中百分比按各自包含块（.chat-container）计算，三栏左边缘始终对齐。 */
+        .chat-header,
+        .chat-messages,
+        .chat-input-bar {
+            padding-left: max(var(--page-pad), calc((100% - var(--content-max)) / 2));
+            padding-right: max(var(--page-pad), calc((100% - var(--content-max)) / 2));
         }
 
         textarea {
@@ -231,6 +251,26 @@
         .process-line.thinking { color: #1565C0; }
         .process-line.tool { color: #6A1B9A; }
         .process-line.error { color: #C62828; }
+
+        /* 窄屏（手机）适配：收紧边距，气泡占更宽比例 */
+        @media (max-width: 480px) {
+            :root {
+                --page-pad: 12px;
+            }
+
+            .chat-messages {
+                padding-top: 10px;
+                padding-bottom: 10px;
+            }
+
+            .message {
+                max-width: 85%;
+            }
+
+            .send-btn {
+                padding: 8px 14px;
+            }
+        }
     </style>
 </head>
 <body>
