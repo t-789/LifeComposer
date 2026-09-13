@@ -209,6 +209,28 @@
             margin-top: 4px;
             text-align: inherit;
         }
+
+        .process-box {
+            width: 100%;
+            max-width: 92%;
+            margin: 0 auto 8px;
+        }
+
+        .process-line {
+            font-size: 12px;
+            color: #555;
+            background: rgba(255,255,255,0.75);
+            border: 1px dashed #cfcfcf;
+            border-radius: 8px;
+            padding: 4px 8px;
+            margin-bottom: 4px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .process-line.thinking { color: #1565C0; }
+        .process-line.tool { color: #6A1B9A; }
+        .process-line.error { color: #C62828; }
     </style>
 </head>
 <body>
@@ -228,87 +250,85 @@
     <script>
         // Markdown + KaTeX rendering pipeline
         function renderAssistantMessage(text) {
-            if (!text) return '';
-            
-            // Step 1: Protect math expressions from marked
+            if (!text) return "";
+
             var replacements = [];
             var counter = 0;
-            var makeToken = function() { return '__MATH_' + (counter++) + '__'; };
-            
+            var makeToken = function() { return "__MATH_" + (counter++) + "__"; };
+
             var processed = text;
-            
-            // Protect $$...$$ (block math)
+
             processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, function(full, inner) {
                 var token = makeToken();
                 replacements.push({ token: token, html: renderKaTeX(inner.trim(), true) });
-                return '\n\n' + token + '\n\n';
+                return "\n\n" + token + "\n\n";
             });
-            
-            // Protect \[...\] (block math)
+
             processed = processed.replace(/\\\[([\s\S]*?)\\\]/g, function(full, inner) {
                 var token = makeToken();
                 replacements.push({ token: token, html: renderKaTeX(inner.trim(), true) });
-                return '\n\n' + token + '\n\n';
+                return "\n\n" + token + "\n\n";
             });
-            
-            // Protect $...$ (inline math)
+
             processed = processed.replace(/\$([^$\n]+?)\$/g, function(full, inner) {
                 var token = makeToken();
                 replacements.push({ token: token, html: renderKaTeX(inner.trim(), false) });
                 return token;
             });
-            
-            // Protect \(...\) (inline math)
+
             processed = processed.replace(/\\\(([^\n]+?)\\\)/g, function(full, inner) {
                 var token = makeToken();
                 replacements.push({ token: token, html: renderKaTeX(inner.trim(), false) });
                 return token;
             });
-            
-            // Step 2: Render markdown
+
             var html;
-            if (typeof marked !== 'undefined') {
+            if (typeof marked !== "undefined") {
                 html = marked.parse(processed);
             } else {
-                // Fallback: basic newline handling
-                html = processed.replace(/\n/g, '<br>');
+                html = processed.replace(/\n/g, "<br>");
             }
-            
-            // Step 3: Sanitize
-            if (typeof DOMPurify !== 'undefined') {
+
+            if (typeof DOMPurify !== "undefined") {
                 html = DOMPurify.sanitize(html, {
                     USE_PROFILES: { html: true, mathMl: true, svg: false }
                 });
             }
-            
-            // Step 4: Restore math tokens
+
             for (var i = 0; i < replacements.length; i++) {
                 html = html.replaceAll(replacements[i].token, replacements[i].html);
             }
-            
+
             return html;
         }
 
         function renderKaTeX(expr, displayMode) {
-            if (typeof katex !== 'undefined' && typeof katex.renderToString === 'function') {
+            if (typeof katex !== "undefined" && typeof katex.renderToString === "function") {
                 try {
                     return katex.renderToString(expr, {
                         displayMode: displayMode,
                         throwOnError: false
                     });
                 } catch (e) {
-                    return '<code>' + escapeHtml(expr) + '</code>';
+                    return "<code>" + escapeHtml(expr) + "</code>";
                 }
             }
-            // Fallback: return as code
-            return displayMode ? '<pre>' + escapeHtml(expr) + '</pre>' : '<code>' + escapeHtml(expr) + '</code>';
+            return displayMode ? "<pre>" + escapeHtml(expr) + "</pre>" : "<code>" + escapeHtml(expr) + "</code>";
         }
 
         function escapeHtml(str) {
-            var div = document.createElement('div');
-            div.textContent = str;
+            var div = document.createElement("div");
+            div.textContent = str == null ? "" : str;
             return div.innerHTML;
         }
+
+        // ---- SSE turn state ----
+        var thinkingTimer = null;
+        var thinkingSeconds = 0;
+        var thinkingLine = null;
+        var currentProcessBox = null;
+        var currentAssistantEl = null;
+        var currentAssistantText = "";
 
         window.onload = function() {
             loadHistory();
@@ -316,89 +336,255 @@
 
         async function loadHistory() {
             try {
-                const response = await fetch('/api/chat/history', { credentials: 'include' });
+                const response = await fetch("/api/chat/history", { credentials: "include" });
                 if (response.ok) {
                     const messages = await response.json();
                     for (const msg of messages) {
+                        if (msg.role === "tool") continue;
+                        if (msg.role === "assistant" && isToolCallPayload(msg.content)) continue;
                         appendMessage(msg.role, msg.content);
                     }
                 }
                 scrollToBottom();
             } catch (e) {
-                console.error('Failed to load history:', e);
+                console.error("Failed to load history:", e);
+            }
+        }
+
+        function isToolCallPayload(content) {
+            if (!content) return false;
+            try {
+                const obj = JSON.parse(content);
+                return obj && obj.type === "tool_call";
+            } catch (e) {
+                return false;
             }
         }
 
         async function sendMessage() {
-            const input = document.getElementById('messageInput');
+            const input = document.getElementById("messageInput");
             const text = input.value.trim();
             if (!text) return;
 
-            input.value = '';
+            input.value = "";
             autoResize(input);
-            appendMessage('user', text);
+            appendMessage("user", text);
 
-            const sendBtn = document.getElementById('sendBtn');
+            const sendBtn = document.getElementById("sendBtn");
             sendBtn.disabled = true;
-
-            const messageArea = document.getElementById('messageArea');
-            const loadingDiv = document.createElement('div');
-            loadingDiv.className = 'message assistant';
-            loadingDiv.id = 'loadingIndicator';
-            loadingDiv.innerHTML = '<div class="loading-indicator"><span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span></div>';
-            messageArea.appendChild(loadingDiv);
-            scrollToBottom();
+            resetTurnState();
 
             try {
-                const response = await fetch('/api/chat/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
+                const response = await fetch("/api/chat/stream", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+                    credentials: "include",
                     body: JSON.stringify({ message: text })
                 });
 
-                const loading = document.getElementById('loadingIndicator');
-                if (loading) loading.remove();
-
-                if (response.ok) {
-                    const data = await response.json();
-                    appendMessage('assistant', data.content);
-                } else {
-                    const errorData = await response.json().catch(() => ({}));
-                    appendMessage('error', errorData.error || '请求失败，请重试');
+                if (!response.ok) {
+                    let errorText = "请求失败，请重试";
+                    try {
+                        const errorData = await response.json();
+                        errorText = errorData.message || errorData.error || errorText;
+                    } catch (ignored) { }
+                    appendMessage("error", errorText);
+                    return;
                 }
+                if (!response.body) {
+                    appendMessage("error", "浏览器不支持流式响应");
+                    return;
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+                let buffer = "";
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    let separatorIndex;
+                    while ((separatorIndex = buffer.indexOf("\n\n")) >= 0) {
+                        const rawEvent = buffer.slice(0, separatorIndex);
+                        buffer = buffer.slice(separatorIndex + 2);
+                        handleSseEvent(rawEvent);
+                    }
+                }
+                if (buffer.trim()) handleSseEvent(buffer);
             } catch (e) {
-                const loading = document.getElementById('loadingIndicator');
-                if (loading) loading.remove();
-                appendMessage('error', '网络错误，请检查连接后重试');
+                stopThinking();
+                appendMessage("error", "网络错误，请检查连接后重试");
+            } finally {
+                stopThinking();
+                sendBtn.disabled = false;
+                scrollToBottom();
+            }
+        }
+
+        function handleSseEvent(rawEvent) {
+            const lines = rawEvent.split("\n");
+            let eventName = "message";
+            const dataLines = [];
+            for (const line of lines) {
+                if (line.startsWith("event:")) {
+                    eventName = line.slice(6).trim();
+                } else if (line.startsWith("data:")) {
+                    dataLines.push(line.slice(5).trim());
+                }
+            }
+            let data = {};
+            if (dataLines.length) {
+                const payload = dataLines.join("\n");
+                try {
+                    data = JSON.parse(payload);
+                } catch (e) {
+                    data = { raw: payload };
+                }
             }
 
-            sendBtn.disabled = false;
+            switch (eventName) {
+                case "thinking_start":
+                    startThinking();
+                    break;
+                case "thinking_tick":
+                    updateThinking(data.elapsedSeconds);
+                    break;
+                case "thinking_end":
+                    stopThinking(data.elapsedMs);
+                    break;
+                case "tool_call":
+                    appendProcessLine("tool", "tool call - " + (data.description || data.name || ""));
+                    break;
+                case "tool_result":
+                    appendProcessLine("tool", "tool result - " + (data.name || "") + (data.ok ? " ✓" : " ✗"));
+                    break;
+                case "token":
+                    appendAssistantDelta(data.delta || "");
+                    break;
+                case "assistant_message":
+                    finalizeAssistantMessage(data.content || "");
+                    break;
+                case "error":
+                    stopThinking();
+                    appendProcessLine("error", data.message || "LLM 不可用，请稍后重试");
+                    appendMessage("error", data.message || "LLM 不可用，请稍后重试");
+                    break;
+                case "done":
+                    stopThinking();
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        function resetTurnState() {
+            stopThinking();
+            currentProcessBox = null;
+            currentAssistantEl = null;
+            currentAssistantText = "";
+        }
+
+        function getProcessBox() {
+            if (!currentProcessBox) {
+                const messageArea = document.getElementById("messageArea");
+                currentProcessBox = document.createElement("div");
+                currentProcessBox.className = "process-box";
+                messageArea.appendChild(currentProcessBox);
+            }
+            return currentProcessBox;
+        }
+
+        function appendProcessLine(kind, text) {
+            const line = document.createElement("div");
+            line.className = "process-line " + kind;
+            line.textContent = text;
+            getProcessBox().appendChild(line);
+            scrollToBottom();
+        }
+
+        function startThinking() {
+            if (thinkingTimer) return;
+            thinkingSeconds = 0;
+            thinkingLine = document.createElement("div");
+            thinkingLine.className = "process-line thinking";
+            thinkingLine.textContent = "Thinking - 0s";
+            getProcessBox().appendChild(thinkingLine);
+            thinkingTimer = setInterval(function() {
+                thinkingSeconds += 1;
+                if (thinkingLine) thinkingLine.textContent = "Thinking - " + thinkingSeconds + "s";
+            }, 1000);
+            scrollToBottom();
+        }
+
+        function updateThinking(seconds) {
+            if (typeof seconds === "number" && seconds >= 0) {
+                thinkingSeconds = seconds;
+                if (thinkingLine) thinkingLine.textContent = "Thinking - " + thinkingSeconds + "s";
+            }
+        }
+
+        function stopThinking(elapsedMs) {
+            if (thinkingTimer) {
+                clearInterval(thinkingTimer);
+                thinkingTimer = null;
+            }
+            if (thinkingLine) {
+                if (typeof elapsedMs === "number" && elapsedMs >= 0) {
+                    thinkingSeconds = Math.max(thinkingSeconds, Math.round(elapsedMs / 1000));
+                }
+                thinkingLine.textContent = "Thinking - " + thinkingSeconds + "s";
+                thinkingLine = null;
+            }
+        }
+
+        function appendAssistantDelta(delta) {
+            if (!delta) return;
+            if (!currentAssistantEl) {
+                getProcessBox();
+                currentAssistantEl = document.createElement("div");
+                currentAssistantEl.className = "message assistant";
+                document.getElementById("messageArea").appendChild(currentAssistantEl);
+            }
+            currentAssistantText += delta;
+            currentAssistantEl.innerHTML = renderAssistantMessage(currentAssistantText);
+            scrollToBottom();
+        }
+
+        function finalizeAssistantMessage(content) {
+            if (!content) return;
+            if (!currentAssistantEl) {
+                currentAssistantEl = document.createElement("div");
+                currentAssistantEl.className = "message assistant";
+                document.getElementById("messageArea").appendChild(currentAssistantEl);
+            }
+            currentAssistantText = content;
+            currentAssistantEl.innerHTML = renderAssistantMessage(content);
+            currentAssistantEl = null;
             scrollToBottom();
         }
 
         async function clearContext() {
-            if (!confirm('确定清除所有对话记录？')) return;
+            if (!confirm("确定清除所有对话记录？")) return;
 
             try {
-                const response = await fetch('/api/chat/context', {
-                    method: 'DELETE',
-                    credentials: 'include'
+                const response = await fetch("/api/chat/context", {
+                    method: "DELETE",
+                    credentials: "include"
                 });
                 if (response.ok) {
-                    document.getElementById('messageArea').innerHTML = '';
-                    appendMessage('system', '对话已清除');
+                    document.getElementById("messageArea").innerHTML = "";
+                    appendMessage("system", "对话已清除");
                 }
             } catch (e) {
-                console.error('Failed to clear context:', e);
+                console.error("Failed to clear context:", e);
             }
         }
 
         function appendMessage(role, content) {
-            const messageArea = document.getElementById('messageArea');
-            const div = document.createElement('div');
-            div.className = 'message ' + role;
-            if (role === 'assistant') {
+            const messageArea = document.getElementById("messageArea");
+            const div = document.createElement("div");
+            div.className = "message " + role;
+            if (role === "assistant") {
                 div.innerHTML = renderAssistantMessage(content);
             } else {
                 div.textContent = content;
@@ -408,22 +594,22 @@
         }
 
         function scrollToBottom() {
-            const messageArea = document.getElementById('messageArea');
+            const messageArea = document.getElementById("messageArea");
             setTimeout(() => {
                 messageArea.scrollTop = messageArea.scrollHeight;
             }, 50);
         }
 
         function onInputKeydown(event) {
-            if (event.key === 'Enter' && !event.shiftKey) {
+            if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 sendMessage();
             }
         }
 
         function autoResize(textarea) {
-            textarea.style.height = 'auto';
-            textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+            textarea.style.height = "auto";
+            textarea.style.height = Math.min(textarea.scrollHeight, 120) + "px";
         }
     </script>
 </body>

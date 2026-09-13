@@ -180,6 +180,73 @@
       ============================================================
     -->
 
+    <!-- ========== v0.0.4 ========== -->
+    <div class="container">
+        <h1>v0.0.4 — 数据导入 CLI、RAG 检索、Agent Tool-use 与 SSE 过程展示</h1>
+        <p><em>2026 年 9 月 13 日</em></p>
+
+        <div class="stats-grid">
+            <div class="stat-item"><span class="stat-num">1</span><span class="stat-label">独立导入 CLI</span></div>
+            <div class="stat-item"><span class="stat-num">7</span><span class="stat-label">rag_chunks 新增列</span></div>
+            <div class="stat-item"><span class="stat-num">5</span><span class="stat-label">只读 Agent 工具</span></div>
+            <div class="stat-item"><span class="stat-num">1</span><span class="stat-label">新增 SSE 端点</span></div>
+            <div class="stat-item"><span class="stat-num">5</span><span class="stat-label">use case 切 deepseek-flash</span></div>
+            <div class="stat-item"><span class="stat-num">164</span><span class="stat-label">自动化测试</span></div>
+        </div>
+
+        <h2>新增：通用样例数据导入 CLI</h2>
+        <ul>
+            <li>新增独立入口 <code>org.example.lifecomposer.importer.DataImportCli</code> 与 <code>./import.sh</code>；使用 <code>WebApplicationType.NONE</code>，执行完即退出，不启动 Web 服务</li>
+            <li>导入模式下设置 <code>lifecomposer.import.mode=true</code>，<strong>不触发默认管理员初始化</strong>；普通 Web 启动仍按原逻辑创建 <code>admin/admin</code></li>
+            <li>支持 <code>--import-dir</code>、<code>--resources</code>、<code>--profiles</code>、<code>--rag-chunks</code>、<code>--capability-tags</code>、<code>--credit-rules-dir</code>、<code>--rebuild-embeddings</code>、<code>--dry-run</code>、<code>--report</code>、<code>--demo-password</code></li>
+            <li>按业务键幂等 upsert；单条坏记录/坏文件只记录报告不中断批次；<code>rag/test_questions.json</code> 不导入</li>
+            <li>学生画像完整性校验：缺少 <code>major</code> / <code>grade</code> / <code>skills</code> / <code>interests</code> / <code>experiences</code> / <code>goals</code> 任一必填字段时跳过，不创建/更新 <code>testuser_N</code></li>
+            <li>退出码可靠：全部成功 0；记录、文件级或 embedding 错误 1；参数错误/启动异常 2</li>
+            <li>演示账号：用户名 <code>testuser_&lt;n&gt;</code>，默认密码 <code>testuser</code>（可用 <code>--demo-password</code> 覆盖）；重复导入只更新画像，不重复建号、不覆盖已有密码</li>
+            <li>本次样例导入结果：18 条资源、346 条加分规则、28 条 RAG 切片、10 个能力标签 + 68 条字典引用、3 个演示账号；重复执行 inserted=0，无重复数据</li>
+        </ul>
+
+        <h2>新增：Ollama Embedding 与 SQLite 向量检索</h2>
+        <ul>
+            <li><code>rag_chunks</code> 新增 <code>embedding_json</code>、<code>embedding_model</code>、<code>embedding_dimensions</code>、<code>embedding_status</code>、<code>embedding_error</code>、<code>embedding_updated_at</code>、<code>content_hash</code>，启动时幂等迁移补齐</li>
+            <li>独立 <code>OllamaEmbeddingClient</code>：固定 <code>POST http://localhost:11434/v1/embeddings</code>，读取 <code>data[0].embedding</code>，维度取自响应数组长度，不读取/打印 API key</li>
+            <li>按 <code>content_hash</code> 判断切片文本是否变化，支持 <code>--rebuild-embeddings</code> 强制重建；单条 embedding 失败只影响该切片状态</li>
+            <li>RAG 检索默认 <code>topK=5</code>、最低相似度 <code>0.2</code>，按相似度降序再按 <code>chunk_id</code> 升序；没有 embedding 的切片不参与检索</li>
+        </ul>
+
+        <h2>新增：Agent 多轮 Tool-use</h2>
+        <ul>
+            <li>白名单只读工具：<code>get_user_profile</code>、<code>get_user_credit_activities</code>、<code>search_resources</code>、<code>query_credit_rules</code>、<code>search_rag</code>；全部基于当前登录用户身份执行，禁止任意 SQL/代码</li>
+            <li>工具注册表统一维护工具名、描述、参数 JSON Schema、前端展示描述与执行器；工具错误结构化返回给 LLM 继续判断</li>
+            <li>最大 8 轮工具循环，防止无限调用；<code>/api/chat/send</code> 与 <code>/api/chat/stream</code> 复用同一编排逻辑</li>
+            <li>tool-call 持久化：assistant tool_call + tool result 各一条记录，角色分别为 <code>assistant</code> / <code>tool</code>；记录中带 <code>turnId</code>，同一轮多个工具调用合并为一条带多个 <code>tool_calls</code> 的 assistant 消息，不同轮次按 <code>turnId</code> 隔离，符合 OpenAI/DeepSeek 协议</li>
+            <li>SSE 场景下先成功发送 <code>tool_call</code> / <code>tool_result</code> / <code>assistant_message</code> 事件再写库；<code>tool_call</code> 与对应 <code>tool_result</code> 成对原子写入，浏览器断开时不会留下未送达或不成对记录</li>
+            <li><code>/api/chat/*</code> 移除 fallback/mock：不可用时 <code>/api/chat/send</code> 返回 HTTP 503，SSE 发送 <code>error</code> 事件；其他生成用途本轮仍保留可配置 fallback</li>
+        </ul>
+
+        <h2>新增：SSE 流式对话与前端过程展示</h2>
+        <ul>
+            <li>新增 <code>POST /api/chat/stream</code>（<code>text/event-stream</code>）：<code>thinking_start</code>、可选 <code>thinking_tick</code>、<code>thinking_end</code>、<code>tool_call</code>、<code>tool_result</code>、<code>token</code>、<code>assistant_message</code>、<code>error</code>、<code>done</code></li>
+            <li>思考计时：仅首次收到 <code>reasoning_content</code> 时开始；reasoning 中出现 <code>&lt;/think&gt;</code> / <code>done thinking</code>，或 reasoning 阶段结束（首个 content/流结束/报错）时停止；普通 token/tool_call 不提前停止；不展示模型隐藏思维原文</li>
+            <li>本次前端实施范围仅 <code>chat_test.html</code>：<code>Thinking - [n]s</code> 与 <code>tool call - [description]</code> 独占一行、固定过程容器、Markdown/KaTeX 安全渲染；刷新后只恢复持久化的 user/assistant 消息</li>
+            <li>连接中断不保存未完成的 assistant 文本；已完整写入的 user 消息和已完成的工具调用记录保留</li>
+        </ul>
+
+        <h2>配置：统一切换 deepseek-flash</h2>
+        <ul>
+            <li><code>qa</code> / <code>planning</code> / <code>profile</code> / <code>sql</code> / <code>chat</code> 默认配置统一为 provider=<code>deepseek</code>、baseUrl=<code>https://api.deepseek.com/v1</code>、model=<code>deepseek-flash</code>，API key 只通过环境变量名 <code>DEEPSEEK_API_KEY</code> 读取</li>
+            <li>Embedding 模型保持本地 Ollama <code>nomic-embed-text-v2-moe:latest</code>，只负责向量生成，不替代生成式模型</li>
+            <li>同步更新 <code>application.properties</code>、测试配置、<code>.env.example</code>、<code>run.sh</code>、<code>API.md</code>、<code>SCHEMA.md</code>、<code>AGENTS.md</code></li>
+        </ul>
+
+        <h2>测试与验收</h2>
+        <ul>
+            <li>自动化测试 <strong>164 个，0 失败</strong>；新增导入选项/哈希/重复业务键/null 记录、RAG 排序与过滤、工具注册表、Agent 多轮 tool-use、turnId 轮次隔离、SSE 断开不落库、空 delta 与流式异常边界测试</li>
+            <li>样例包真实导入验证：inserted=476、failed=0、embeddingFailed=0；重复执行 inserted=0、skipped=31，无重复数据；验证后已按安全约束把 <code>data.db</code> / <code>logs/</code> 从提交范围移除，导入结果按需用 <code>./import.sh</code> 复现</li>
+            <li>验证 <code>test_questions.json</code> 未进入业务表；3 个演示账号 <code>testuser_1..3</code> 均为普通 USER（type=1）</li>
+        </ul>
+    </div>
+
     <!-- ========== v0.0.3 ========== -->
     <div class="container">
         <h1>v0.0.3 — 画像扩展与成长数据底座：加分规则 / 资源库 / RAG / 能力字典</h1>

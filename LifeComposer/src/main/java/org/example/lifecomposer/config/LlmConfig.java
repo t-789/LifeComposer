@@ -41,16 +41,16 @@ public class LlmConfig {
     @Setter
     public static class UseCaseConfig {
 
-        private String provider = "ollama";
-        private String baseUrl = "http://localhost:11434/v1";
-        private String model = "lfm2.5:8b";
+        private String provider = "deepseek";
+        private String baseUrl = "https://api.deepseek.com/v1";
+        private String model = "deepseek-flash";
 
         /**
          * Name of the environment variable holding the API key (e.g.
          * "DEEPSEEK_API_KEY"). Stores the NAME only, never the value.
          * Empty means no auth needed (local Ollama) or deterministic fallback.
          */
-        private String apiKeyEnv = "";
+        private String apiKeyEnv = "DEEPSEEK_API_KEY";
 
         /** Disabled by default so startup needs no cloud key or running Ollama. */
         private boolean enabled = false;

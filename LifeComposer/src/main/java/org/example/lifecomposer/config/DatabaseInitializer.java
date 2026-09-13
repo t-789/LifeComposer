@@ -19,6 +19,7 @@ import org.example.lifecomposer.Repository.UserProfileRepository;
 import org.example.lifecomposer.Repository.UserRepository;
 import org.example.lifecomposer.Entity.User;
 import org.example.lifecomposer.Entity.UserType;
+import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -49,6 +50,7 @@ public class DatabaseInitializer {
     private final CapabilityTagRepository capabilityTagRepository;
     private final CapabilityReferenceRepository capabilityReferenceRepository;
     private final PasswordEncoder passwordEncoder;
+    private final boolean importMode;
 
     public DatabaseInitializer(JdbcTemplate jdbcTemplate,
                                UserRepository userRepository,
@@ -62,7 +64,8 @@ public class DatabaseInitializer {
                                RagChunkRepository ragChunkRepository,
                                CapabilityTagRepository capabilityTagRepository,
                                CapabilityReferenceRepository capabilityReferenceRepository,
-                               PasswordEncoder passwordEncoder) {
+                               PasswordEncoder passwordEncoder,
+                               Environment environment) {
         this.jdbcTemplate = jdbcTemplate;
         this.userRepository = userRepository;
         this.feedbackRepository = feedbackRepository;
@@ -76,6 +79,7 @@ public class DatabaseInitializer {
         this.capabilityTagRepository = capabilityTagRepository;
         this.capabilityReferenceRepository = capabilityReferenceRepository;
         this.passwordEncoder = passwordEncoder;
+        this.importMode = environment.getProperty("lifecomposer.import.mode", Boolean.class, false);
     }
 
     @PostConstruct
@@ -206,6 +210,10 @@ public class DatabaseInitializer {
     }
 
     private void createDefaultAdminIfMissing() {
+        if (importMode) {
+            LOG.info("Import mode active: skipping default admin bootstrap");
+            return;
+        }
         if (userRepository.countAdminUsers() > 0) {
             return;
         }

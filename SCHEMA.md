@@ -2,28 +2,21 @@
 
 ## 概述
 
-本系统面向北邮大学生成长规划场景，基于 SQLite 数据库存储。当前设计包含 11 张表（5 张已实现 + 6 张待建）：
-
-### 已实现（v0.0.1）
+本系统面向北邮大学生成长规划场景，基于 SQLite 数据库存储。当前设计包含 11 张表，全部已实现；v0.0.4 为 `rag_chunks` 增加 embedding 相关字段：
 
 | 表名 | 用途 |
 |------|------|
 | `users` | 用户账户 |
 | `feedback` | 用户反馈与系统错误 |
-| `user_profiles` | 用户画像扩展 |
+| `user_profiles` | 用户画像扩展（目标并入 `goals` 列） |
 | `planning_history` | AI 交互历史记录 |
-| `chat_messages` | 对话消息 |
-
-### 待建（8月主体开发）
-
-| 表名 | 用途 |
-|------|------|
+| `chat_messages` | 对话消息（支持 user / assistant / tool 角色） |
 | `college_credit_rules` | 加分规则标准（双创分 + 保研加分） |
 | `credit_activities` | 用户已获得的加分记录 |
 | `resources` | 成长资源库（竞赛 + 课程，靠 `type` 区分） |
-| `rag_chunks` | RAG 检索切片 |
+| `rag_chunks` | RAG 检索切片（v0.0.4 增加 embedding_json / embedding_model / embedding_dimensions / embedding_status / embedding_error / embedding_updated_at / content_hash） |
 | `capability_tags` | 标准能力标签字典（10 个标签 × L1/L2/L3） |
-| `capability_reference` | 能力映射/模板/大类字典（tags_to_merge / skill_mapping / skill_profiles / role_profiles / major_categories） |
+| `capability_reference` | 能力映射/模板/大类字典（tags_to_merge / skill_mapping / skill_profiles / role_profiles / major_categories / _meta） |
 
 > **注意**：SQLite 当前 `PRAGMA foreign_keys = OFF`（默认），表之间的 `REFERENCES` 约束仅作为逻辑关联标注，运行时不强制。
 
@@ -226,9 +219,16 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 |------|------|------|------|
 | `id` | auto | Primary key | 1 |
 | `user_id` | 是 | 所属用户 ID | 5 |
-| `role` | 是 | 'user' 表示用户消息，'assistant' 表示 AI 回复 | 'user' |
-| `content` | 是 | 消息内容（纯文本） | '你好，请问有什么可以帮助你的？' |
+| `role` | 是 | 'user' 用户消息；'assistant' AI 回复或工具调用请求；'tool' 工具执行结果 | 'user' |
+| `content` | 是 | 消息内容。普通文本直接存储；tool-call 场景为结构化 JSON 字符串（见下方 v0.0.4 说明） | '你好，请问有什么可以帮助你的？' |
 | `create_time` | 是 | 创建时间 | 2026-06-28 12:00:00 |
+
+> **v0.0.4 tool 消息约定**：一次工具调用保存两条记录。assistant 记录形如
+> `{"type":"tool_call","turnId":"turn-1","name":"search_resources","callId":"call-1","arguments":{"keyword":"数学建模"}}`；
+> tool 记录形如 `{"type":"tool_result","turnId":"turn-1","callId":"call-1","ok":true,"data":{...}}`。
+> 读取历史拼装下一轮 LLM 上下文时，按 `turnId` 分组：同一轮多个 tool_call 合并为一条带 `tool_calls` 的 assistant 消息，
+> 不同轮次保持独立；tool 记录还原为带 `tool_call_id` 的 tool 消息。旧数据无 `turnId` 时回退为连续记录分组。
+> thinking 过程、计时状态和未完成文本不持久化。
 
 ---
 
@@ -396,25 +396,36 @@ CREATE TABLE resources (
 
 ---
 
-### 9. `rag_chunks`（RAG 切片表）📋 待建
+### 9. `rag_chunks`（RAG 切片表）✅ 已实现（v0.0.4 增加 embedding 字段）
 
 检索增强用的知识切片。种子数据：`样例/rag/chunks.json`（28 条：学院加分规则概览 ×6、竞赛 ×12、课程 ×6、能力标签说明 ×2、早期手写 ×2）。
 
 ```sql
 CREATE TABLE rag_chunks (
-  chunk_id            TEXT PRIMARY KEY,
-  title               TEXT NOT NULL,
-  text                TEXT NOT NULL,
-  source_type         TEXT CHECK(source_type IN ('web', 'pdf', 'json')),
-  source_url          TEXT,
-  source_file         TEXT,
-  page_or_section     TEXT,
-  related_resource_id TEXT,
-  created_at          TEXT
+  chunk_id              TEXT PRIMARY KEY,
+  title                 TEXT NOT NULL,
+  text                  TEXT NOT NULL,
+  source_type           TEXT CHECK(source_type IN ('web', 'pdf', 'json')),
+  source_url            TEXT,
+  source_file           TEXT,
+  page_or_section       TEXT,
+  related_resource_id   TEXT,
+  created_at            TEXT,
+  embedding_json        TEXT,
+  embedding_model       TEXT,
+  embedding_dimensions  INTEGER,
+  embedding_status      TEXT,
+  embedding_error       TEXT,
+  embedding_updated_at  TEXT,
+  content_hash          TEXT
 );
 
 CREATE INDEX idx_rag_related ON rag_chunks(related_resource_id);
+CREATE INDEX idx_rag_embedding_status ON rag_chunks(embedding_status);
 ```
+
+存量库由 `RagChunkRepository.createTableIfNeeded()/migrateSchema()` 通过 `PRAGMA table_info` 逐列检测并
+`ALTER TABLE ADD COLUMN` 幂等补齐上述 7 个 v0.0.4 字段。
 
 | 字段 | 必填 | 说明 | 示例 |
 |------|------|------|------|
@@ -427,6 +438,13 @@ CREATE INDEX idx_rag_related ON rag_chunks(related_resource_id);
 | `page_or_section` | 否 | 页码/章节定位 | '参赛须知' |
 | `related_resource_id` | 否 | 逻辑关联 `resources.resource_id`（业务 id）；样例中 8/28 条不关联任何资源（如学院规则概览），允许 NULL | 'competition_001' |
 | `created_at` | 否 | 切片生成日期 | '2026-06-06' |
+| `embedding_json` | 否 | 向量 JSON 数组；NULL 表示尚未生成，不参与检索 | '[0.12,-0.03,...]' |
+| `embedding_model` | 否 | 生成向量的模型 | 'nomic-embed-text-v2-moe:latest' |
+| `embedding_dimensions` | 否 | 向量维度（从 embeddings 响应数组长度获取，不硬编码） | 768 |
+| `embedding_status` | 否 | PENDING / SUCCESS / FAILED / SKIPPED | 'SUCCESS' |
+| `embedding_error` | 否 | 失败原因（截断，不含密钥） | 'HTTP 500 ...' |
+| `embedding_updated_at` | 否 | 最近一次 embedding 更新时间（ISO-8601） | '2026-09-13T10:56:40Z' |
+| `content_hash` | 否 | SHA-256(text)，用于判断是否重新生成 embedding | 'a1b2...' |
 
 > **`rag/test_questions.json` 不入库**：10 个检索回归测试题（含 `expected_chunk_ids`）属于测试夹具，建议放在 `src/test/resources/` 下作为检索效果的验收数据，不建表。
 

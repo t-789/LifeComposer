@@ -32,6 +32,14 @@ public class RagChunkRepository {
             chunk.setPageOrSection(rs.getString("page_or_section"));
             chunk.setRelatedResourceId(rs.getString("related_resource_id"));
             chunk.setCreatedAt(rs.getString("created_at"));
+            chunk.setEmbeddingJson(rs.getString("embedding_json"));
+            chunk.setEmbeddingModel(rs.getString("embedding_model"));
+            int dimensions = rs.getInt("embedding_dimensions");
+            chunk.setEmbeddingDimensions(rs.wasNull() ? null : dimensions);
+            chunk.setEmbeddingStatus(rs.getString("embedding_status"));
+            chunk.setEmbeddingError(rs.getString("embedding_error"));
+            chunk.setEmbeddingUpdatedAt(rs.getString("embedding_updated_at"));
+            chunk.setContentHash(rs.getString("content_hash"));
             return chunk;
         }
     };
@@ -39,6 +47,16 @@ public class RagChunkRepository {
     public List<RagChunk> findAll() {
         String sql = """
                 SELECT * FROM rag_chunks
+                ORDER BY chunk_id
+                """;
+        return jdbcTemplate.query(sql, RAG_CHUNK_ROW_MAPPER);
+    }
+
+    /** 仅返回有 embedding 的切片；没有向量的切片不参与检索。 */
+    public List<RagChunk> findAllWithEmbedding() {
+        String sql = """
+                SELECT * FROM rag_chunks
+                WHERE embedding_json IS NOT NULL AND TRIM(embedding_json) != ''
                 ORDER BY chunk_id
                 """;
         return jdbcTemplate.query(sql, RAG_CHUNK_ROW_MAPPER);
@@ -65,13 +83,18 @@ public class RagChunkRepository {
         }
     }
 
-    /** 按 chunk_id 幂等写入（重复导入同一交付包不产生重复行）。 */
+    /**
+     * 按 chunk_id 幂等写入业务字段和 content_hash。
+     * 不覆盖 embedding 字段：向量更新由 {@link #updateEmbedding} 单独负责，
+     * 避免重复导入把已有向量误清空。
+     */
     public int upsert(RagChunk chunk) {
         String sql = """
                 INSERT INTO rag_chunks
                     (chunk_id, title, text, source_type, source_url,
-                     source_file, page_or_section, related_resource_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     source_file, page_or_section, related_resource_id,
+                     created_at, content_hash, embedding_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'PENDING'))
                 ON CONFLICT(chunk_id) DO UPDATE SET
                     title = excluded.title,
                     text = excluded.text,
@@ -80,7 +103,8 @@ public class RagChunkRepository {
                     source_file = excluded.source_file,
                     page_or_section = excluded.page_or_section,
                     related_resource_id = excluded.related_resource_id,
-                    created_at = excluded.created_at
+                    created_at = excluded.created_at,
+                    content_hash = excluded.content_hash
                 """;
         return jdbcTemplate.update(sql,
                 chunk.getChunkId(),
@@ -91,25 +115,94 @@ public class RagChunkRepository {
                 chunk.getSourceFile(),
                 chunk.getPageOrSection(),
                 chunk.getRelatedResourceId(),
-                chunk.getCreatedAt());
+                chunk.getCreatedAt(),
+                chunk.getContentHash(),
+                chunk.getEmbeddingStatus());
+    }
+
+    public int updateEmbedding(String chunkId,
+                               String embeddingJson,
+                               String embeddingModel,
+                               Integer dimensions,
+                               String status,
+                               String error,
+                               String updatedAt) {
+        return jdbcTemplate.update("""
+                        UPDATE rag_chunks
+                        SET embedding_json = ?,
+                            embedding_model = ?,
+                            embedding_dimensions = ?,
+                            embedding_status = ?,
+                            embedding_error = ?,
+                            embedding_updated_at = ?
+                        WHERE chunk_id = ?
+                        """,
+                embeddingJson,
+                embeddingModel,
+                dimensions,
+                status,
+                error,
+                updatedAt,
+                chunkId);
     }
 
     public void createTableIfNeeded() {
         String sql = """
                 CREATE TABLE IF NOT EXISTS rag_chunks (
-                  chunk_id            TEXT PRIMARY KEY,
-                  title               TEXT NOT NULL,
-                  text                TEXT NOT NULL,
-                  source_type         TEXT CHECK(source_type IN ('web', 'pdf', 'json')),
-                  source_url          TEXT,
-                  source_file         TEXT,
-                  page_or_section     TEXT,
-                  related_resource_id TEXT,
-                  created_at          TEXT
+                  chunk_id              TEXT PRIMARY KEY,
+                  title                 TEXT NOT NULL,
+                  text                  TEXT NOT NULL,
+                  source_type           TEXT CHECK(source_type IN ('web', 'pdf', 'json')),
+                  source_url            TEXT,
+                  source_file           TEXT,
+                  page_or_section       TEXT,
+                  related_resource_id   TEXT,
+                  created_at            TEXT,
+                  embedding_json        TEXT,
+                  embedding_model       TEXT,
+                  embedding_dimensions  INTEGER,
+                  embedding_status      TEXT,
+                  embedding_error       TEXT,
+                  embedding_updated_at  TEXT,
+                  content_hash          TEXT
                 )
                 """;
         jdbcTemplate.execute(sql);
+        migrateSchema();
 
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_rag_related ON rag_chunks(related_resource_id)");
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_rag_embedding_status ON rag_chunks(embedding_status)");
+    }
+
+    /** 幂等迁移：老库逐列补齐 v0.0.4 的 embedding 字段。 */
+    public void migrateSchema() {
+        if (!hasColumn("embedding_json")) {
+            jdbcTemplate.execute("ALTER TABLE rag_chunks ADD COLUMN embedding_json TEXT");
+        }
+        if (!hasColumn("embedding_model")) {
+            jdbcTemplate.execute("ALTER TABLE rag_chunks ADD COLUMN embedding_model TEXT");
+        }
+        if (!hasColumn("embedding_dimensions")) {
+            jdbcTemplate.execute("ALTER TABLE rag_chunks ADD COLUMN embedding_dimensions INTEGER");
+        }
+        if (!hasColumn("embedding_status")) {
+            jdbcTemplate.execute("ALTER TABLE rag_chunks ADD COLUMN embedding_status TEXT");
+        }
+        if (!hasColumn("embedding_error")) {
+            jdbcTemplate.execute("ALTER TABLE rag_chunks ADD COLUMN embedding_error TEXT");
+        }
+        if (!hasColumn("embedding_updated_at")) {
+            jdbcTemplate.execute("ALTER TABLE rag_chunks ADD COLUMN embedding_updated_at TEXT");
+        }
+        if (!hasColumn("content_hash")) {
+            jdbcTemplate.execute("ALTER TABLE rag_chunks ADD COLUMN content_hash TEXT");
+        }
+    }
+
+    private boolean hasColumn(String columnName) {
+        List<String> columns = jdbcTemplate.query(
+                "PRAGMA table_info(rag_chunks)",
+                (rs, rowNum) -> rs.getString("name"));
+        return columns.stream().anyMatch(col -> col.equalsIgnoreCase(columnName));
     }
 }

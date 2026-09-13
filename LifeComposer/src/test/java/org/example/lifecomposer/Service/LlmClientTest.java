@@ -143,7 +143,8 @@ class LlmClientTest {
 
         LlmResponseDto resp = llmClient.chat(req);
 
-        assertTrue(resp.isMocked());
+        assertTrue(resp.isFailed());
+        assertFalse(resp.isMocked());
         assertNotNull(resp.getErrorMessage());
     }
 }

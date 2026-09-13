@@ -76,6 +76,115 @@ public class CollegeCreditRuleRepository {
         jdbcTemplate.execute(sql);
     }
 
+    /** 按学院/加分类型/类别/级别/奖项组合检索；空参数忽略。 */
+    public List<CollegeCreditRule> search(String college,
+                                          String creditType,
+                                          String category,
+                                          String compLevel,
+                                          String awardTier,
+                                          Integer limit) {
+        StringBuilder sql = new StringBuilder("SELECT * FROM college_credit_rules WHERE 1 = 1");
+        List<Object> params = new ArrayList<>();
+        if (college != null && !college.isBlank()) {
+            sql.append(" AND college LIKE ?");
+            params.add("%" + college.trim() + "%");
+        }
+        if (creditType != null && !creditType.isBlank()) {
+            sql.append(" AND credit_type = ?");
+            params.add(creditType.trim());
+        }
+        if (category != null && !category.isBlank()) {
+            sql.append(" AND category = ?");
+            params.add(category.trim());
+        }
+        if (compLevel != null && !compLevel.isBlank()) {
+            sql.append(" AND comp_level = ?");
+            params.add(compLevel.trim());
+        }
+        if (awardTier != null && !awardTier.isBlank()) {
+            sql.append(" AND award_tier = ?");
+            params.add(awardTier.trim());
+        }
+        sql.append(" ORDER BY id ASC");
+        if (limit != null && limit > 0) {
+            sql.append(" LIMIT ?");
+            params.add(limit);
+        }
+        return jdbcTemplate.query(sql.toString(), COLLEGE_CREDIT_RULE_ROW_MAPPER, params.toArray());
+    }
+
+    /**
+     * 按业务字段组合查找已存在规则。用于导入工具在缺少唯一约束的情况下实现幂等 upsert。
+     * 可空字段使用 SQLite 的 IS 比较，保证 NULL 也能匹配。
+     */
+    public CollegeCreditRule findMatching(CollegeCreditRule rule) {
+        try {
+            return jdbcTemplate.queryForObject("""
+                            SELECT * FROM college_credit_rules
+                            WHERE college = ?
+                              AND credit_type = ?
+                              AND category = ?
+                              AND comp_level IS ?
+                              AND comp_name IS ?
+                              AND award_tier IS ?
+                              AND credits = ?
+                              AND category_cap IS ?
+                              AND team_formula IS ?
+                              AND student_cohort IS ?
+                              AND doc_source IS ?
+                            LIMIT 1
+                            """,
+                    COLLEGE_CREDIT_RULE_ROW_MAPPER,
+                    rule.getCollege(),
+                    rule.getCreditType(),
+                    rule.getCategory(),
+                    rule.getCompLevel(),
+                    rule.getCompName(),
+                    rule.getAwardTier(),
+                    rule.getCredits(),
+                    rule.getCategoryCap(),
+                    rule.getTeamFormula(),
+                    rule.getStudentCohort(),
+                    rule.getDocSource());
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
+
+    public void update(CollegeCreditRule rule) {
+        jdbcTemplate.update("""
+                        UPDATE college_credit_rules SET
+                            college = ?,
+                            credit_type = ?,
+                            category = ?,
+                            comp_level = ?,
+                            comp_name = ?,
+                            award_tier = ?,
+                            credits = ?,
+                            category_cap = ?,
+                            team_formula = ?,
+                            student_cohort = ?,
+                            doc_source = ?,
+                            levels_json = ?,
+                            notes = ?
+                        WHERE id = ?
+                        """,
+                rule.getCollege(),
+                rule.getCreditType(),
+                rule.getCategory(),
+                rule.getCompLevel(),
+                rule.getCompName(),
+                rule.getAwardTier(),
+                rule.getCredits(),
+                rule.getCategoryCap(),
+                rule.getTeamFormula(),
+                rule.getStudentCohort(),
+                rule.getDocSource(),
+                rule.getLevelsJson(),
+                rule.getNotes(),
+                rule.getId());
+    }
+
     public CollegeCreditRule findById(Long id) {
         try {
             return jdbcTemplate.queryForObject(

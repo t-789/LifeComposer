@@ -10,7 +10,11 @@ import java.sql.Timestamp;
 public class ChatMessage {
     private Integer id;
     private Integer userId;
-    private String role;   // "user" or "assistant"
+    /**
+     * "user" / "assistant" / "tool". Assistant rows may carry a structured
+     * tool_call payload; tool rows carry the matching tool_result payload.
+     */
+    private String role;
     private String content;
     private Timestamp createTime;
 }

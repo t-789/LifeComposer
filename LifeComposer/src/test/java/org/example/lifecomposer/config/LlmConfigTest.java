@@ -8,7 +8,6 @@ import org.springframework.test.context.ActiveProfiles;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -18,12 +17,13 @@ class LlmConfigTest {
     private LlmConfig llmConfig;
 
     @Test
-    void qaUseCaseResolvesToOllamaDefaults() {
+    void qaUseCaseResolvesToDeepseekFlashDefaults() {
         LlmConfig.UseCaseConfig qa = llmConfig.resolveOrDefault("qa");
 
-        assertEquals("ollama", qa.getProvider());
-        assertEquals("http://localhost:11434/v1", qa.getBaseUrl());
-        assertEquals("lfm2.5:8b", qa.getModel());
+        assertEquals("deepseek", qa.getProvider());
+        assertEquals("https://api.deepseek.com/v1", qa.getBaseUrl());
+        assertEquals("deepseek-flash", qa.getModel());
+        assertEquals("DEEPSEEK_API_KEY", qa.getApiKeyEnv());
     }
 
     @Test
@@ -47,20 +47,27 @@ class LlmConfigTest {
 
         LlmConfig.UseCaseConfig qa = llmConfig.resolveOrDefault("qa");
         assertNotNull(qa);
-        assertTrue(qa.getApiKeyEnv() == null || qa.getApiKeyEnv().isEmpty());
+        assertNotNull(qa.getApiKeyEnv());
     }
 
     @Test
-    void allFourRequiredUseCasesExistWithValidDefaults() {
+    void allUseCasesExistWithDeepseekFlashDefaults() {
         for (LlmUseCase useCase : LlmUseCase.values()) {
             LlmConfig.UseCaseConfig config = llmConfig.resolveOrDefault(useCase.configKey());
 
             assertNotNull(config);
-            assertEquals("ollama", config.getProvider());
-            assertEquals("http://localhost:11434/v1", config.getBaseUrl());
-            assertEquals("lfm2.5:8b", config.getModel());
+            assertEquals("deepseek", config.getProvider());
+            assertEquals("https://api.deepseek.com/v1", config.getBaseUrl());
+            assertEquals("deepseek-flash", config.getModel());
             assertFalse(config.isEnabled());
-            assertEquals(30000, config.getTimeoutMillis());
         }
+    }
+
+    @Test
+    void chatUseCaseIsRegistered() {
+        LlmConfig.UseCaseConfig chat = llmConfig.resolveOrDefault("chat");
+
+        assertEquals("deepseek", chat.getProvider());
+        assertEquals("deepseek-flash", chat.getModel());
     }
 }

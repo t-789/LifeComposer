@@ -31,3 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Runtime artifacts (security constraint: never commit) ###
+/data.db
+/logs/
+*.log

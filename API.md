@@ -58,9 +58,17 @@
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| POST | `/api/chat/send` | 已登录 | 发送消息，返回 ChatResponse：`role`(assistant)、`content`、`createTime`、`mocked`（是否降级 mock）、`error` |
-| GET | `/api/chat/history` | 已登录 | 获取当前用户的对话历史（`chat_messages` 按时间稳定排序） |
+| POST | `/api/chat/send` | 已登录 | 兼容旧客户端的一次性 JSON；内部复用同一 Agent 多轮 tool-use 逻辑。LLM 不可用时返回 HTTP 503 `{"error":"LLM_UNAVAILABLE","message":"LLM 不可用，请稍后重试"}` |
+| POST | `/api/chat/stream` | 已登录 | SSE 流式对话。事件：`thinking_start` / `thinking_tick`(可选) / `thinking_end` / `tool_call` / `tool_result` / `token` / `assistant_message` / `error` / `done` |
+| GET | `/api/chat/history` | 已登录 | 获取当前用户的对话历史（`chat_messages` 按时间稳定排序）；包含 user / assistant / tool 行 |
 | DELETE | `/api/chat/context` | 已登录 | 清除当前用户的对话上下文，返回 `{"deleted": n}` |
+
+> **v0.0.4 说明**：`/api/chat/*` 不使用 fallback 或 mock 回复。API key 缺失、HTTP 非 2xx、超时、格式错误、流中断均视为 `LLM_UNAVAILABLE`；SSE 发送 `error` 事件后关闭。一次工具调用会持久化两条 `chat_messages`：assistant 的 tool_call JSON 和 tool 的 tool_result JSON。
+>
+> - 思考计时：首次收到 `reasoning_content` 才发送 `thinking_start`；reasoning 中出现 `</think>` / `done thinking`，或 reasoning 阶段结束（首个 `content`、流结束、报错）时发送 `thinking_end`。普通 `token` / `tool_call` 不再提前停止计时。
+> - 持久化顺序：SSE 场景下先成功发送 `tool_call` / `tool_result` / `assistant_message` 事件，再写入数据库；`tool_call` 与对应 `tool_result` 成对原子写入，浏览器断开时不会留下未送达或不成对的 tool/assistant 行。非流式 `/api/chat/send` 直接写入。
+> - 多工具与轮次边界：同一轮返回多个工具调用时，写入数据库仍按每次调用两条记录，并在 tool_call/tool_result JSON 中携带 `turnId`；拼装下一轮 LLM 上下文时按 `turnId` 分组，同一轮合并为一条带多个 `tool_calls` 的 assistant 消息 + 多条 tool 结果，不同轮次保持独立，符合 OpenAI/DeepSeek 协议。旧数据无 `turnId` 时回退为连续记录分组。
+> - thinking 计时状态、未完成 assistant 文本不落库；连接中断时保留已完整写入的 user 消息和已成功送达的工具调用记录。
 
 ## 加分规则 (College Credit Rules)
 

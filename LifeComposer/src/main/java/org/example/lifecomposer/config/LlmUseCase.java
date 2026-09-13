@@ -8,7 +8,8 @@ public enum LlmUseCase {
     QA,
     PLANNING,
     PROFILE,
-    SQL;
+    SQL,
+    CHAT;
 
     /** Lowercase key matching {@code llm.useCases.<key>.*} property names. */
     public String configKey() {

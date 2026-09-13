@@ -182,7 +182,7 @@
                 <configuration>
                     <!-- Java 25+ blocks dynamic agent loading by default; Mockito's
                          inline-mock-maker needs Byte Buddy self-attach during tests -->
-                    <argLine>-XX:+EnableDynamicAgentLoading</argLine>
+                    <argLine>-XX:+EnableDynamicAgentLoading -Djdk.attach.allowAttachSelf=true</argLine>
                 </configuration>
             </plugin>
         </plugins>

@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -60,6 +61,14 @@ public class ChatMessageRepository {
             return ps;
         }, keyHolder);
         return keyHolder.getKey().intValue();
+    }
+
+    /** Atomically insert a tool_call + tool_result pair (or similar batch). */
+    @Transactional
+    public void saveMessages(List<ChatMessage> messages) {
+        for (ChatMessage message : messages) {
+            saveMessage(message);
+        }
     }
 
     public List<ChatMessage> findByUserId(Integer userId) {

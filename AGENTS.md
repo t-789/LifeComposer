@@ -4,28 +4,29 @@
 
 大学生成长规划助手后端。基于 Spring Boot 4.0.5 + SQLite + JdbcTemplate。
 
-### 当前状态（2026-09-05 v0.0.3 后）
+### 当前状态（2026-09-13 v0.0.4 后）
 
-基础后端服务器已完整搭建，包含：
+基础后端 + 数据底座 + Agent tool-use 已搭建完成，包含：
 - 用户系统（注册/登录/Session/Admin）
 - 反馈系统（用户反馈 + 系统错误自动收集）
-- 用户画像 API（`/api/profiles/me`，含 availableTime / goals 字段；目标由画像列承载，独立 goals 表与 /api/goals 已在 v0.0.3 移除）
+- 用户画像 API（`/api/profiles/me`，含 availableTime / goals 字段）
 - 规划历史 API（`/api/planning/history`）
-- 问答 API（`/api/qa/health`、`/api/qa/ask`，mock fallback 模式）
-- AI 对话 API（`/api/chat/send`、`/api/chat/history`、`/api/chat/context`）
-- 成长数据底座（v0.0.3 新增 6 张表：college_credit_rules、credit_activities、resources、rag_chunks、capability_tags、capability_reference）
-- 加分规则/记录 API（`/api/college-credit-rules` 读+ADMIN建、`/api/credit-activities` 本人 CRUD）
-- 资源/字典只读 API（`/api/resources`、`/api/rag-chunks`、`/api/capability-tags`、`/api/capability-reference`）
-- LLM 配置系统（按用途分组支持多 provider）
-- LLM 客户端抽象（Fallback + OpenAI 兼容适配）
+- 问答 API（`/api/qa/health`、`/api/qa/ask`；qa 仍保留可配置 fallback）
+- AI 对话 API（`/api/chat/send`、`/api/chat/stream` SSE、`/api/chat/history`、`/api/chat/context`）
+- 成长数据底座（6 张表：college_credit_rules、credit_activities、resources、rag_chunks、capability_tags、capability_reference）
+- **独立数据导入 CLI**（`DataImportCli` + `import.sh`，`--import-dir` 执行完即退出，不启动 Web、不初始化默认管理员）
+- **Ollama embedding + RAG 检索**（rag_chunks 7 个新字段 + `RagSearchService`；topK=5、minSimilarity=0.2）
+- **Agent 多轮 tool-use**（5 个白名单只读工具 + ToolRegistry + AgentOrchestrator，最多 8 轮）
+- **SSE 流式过程展示**（thinking 计时 / tool_call / tool_result / token / assistant_message / error / done）
+- 生成式 LLM 默认统一切换 DeepSeek `deepseek-flash`；`/api/chat/*` 不使用 fallback（503 / SSE error）
 - 启动脚本 `run.sh`（环境变量加载，密钥安全）
-- 129 个自动化测试，覆盖率完整
+- 164 个自动化测试，全部通过
 
-### 下一阶段目标（8 月主体开发）
+### 下一阶段目标
 
-- Agent 工作流打磨（提示词工程、工具链串联）
-- 资源库内容扩充（样例包已有 18 条资源 + 346 条加分规则 + 28 条 RAG 切片，待批量导入与持续补充，含双创分数据）
 - 能力画像 → 路径推荐算法（skill_mapping 归一 + skill_profiles 展开 + 标签差集匹配）
+- 前端从 `chat_test.html` 推广到正式聊天页面
+- RAG 检索效果回归（`样例/rag/test_questions.json` 夹具）与资源库持续扩充
 
 ## 快速导航
 
@@ -39,8 +40,12 @@ LifeComposer/                          # 当前 Spring Boot 后端
    │   ├── Repository/                 # JdbcTemplate + SQL
    │   ├── Entity/                     # 普通 POJO (非 JPA Entity)
    │   ├── dto/                        # 请求体 DTO，含 LLM DTO
-   │   ├── config/                     # 启动初始化 + LlmConfig（按用途LLM配置）
-   │   ├── Security/                   # Spring Security 配置
+   │   ├── config/                     # 启动初始化 + LlmConfig / EmbeddingConfig / RagConfig / AsyncConfig
+   │   ├── agent/                      # AgentOrchestrator + ToolRegistry + tools/（5 个只读工具）
+   │   ├── embedding/                  # OllamaEmbeddingClient（独立于生成式 LLM）
+   │   ├── rag/                        # RagSearchService + RagHit
+   │   ├── importer/                   # DataImportCli + DataImportService（独立 CLI）
+   │   ├── Security/                   # Spring Security 配置（@ConditionalOnWebApplication）
    │   └── Exception/                  # 全局异常处理
    ├── src/test/java/                  # 测试代码
    │   └── org/example/lifecomposer/
@@ -52,6 +57,7 @@ LifeComposer/                          # 当前 Spring Boot 后端
    │   │   └── release_notes.html      # 发布说明（v0.0.1 起）
    │   └── static/                     # 静态资源（apiList.txt 等）
    ├── run.sh                          # 启动脚本（env 变量注入，无密钥）
+   ├── import.sh                       # 独立数据导入 CLI 包装脚本
    └── data.db                         # SQLite 数据文件 (自动创建，被 .gitignore)
 
 .omo/
@@ -93,7 +99,7 @@ PROJECT_PLAN.md                      # 项目规划、进度与调研数据
 | 密码 | BCrypt （通过 `PasswordEncoder`） | Spring Security 内置 |
 | Java | 25 + Spring Boot 4.0.5 | 最新长期支持 |
 | 构建 | Maven （`./mvnw`） | Wrapper 已包含，无需本地安装 |
-| LLM 兼容层 | OkHttp + Gson (OpenAI 兼容协议) | 抽象出 `LlmClient`，支持 fallback / 云端切换 |
+| LLM 兼容层 | OkHttp + Gson (OpenAI 兼容协议) | 抽象出 `LlmClient`，支持 tools/SSE；`/api/chat/*` 禁用 fallback，其余用途保留可配置 fallback |
 | LLM 配置 | 按用途分组（qa/planning/profile/sql/chat） | 8 月模型对比实验时灵活替换 |
 
 ---
@@ -104,7 +110,11 @@ PROJECT_PLAN.md                      # 项目规划、进度与调研数据
 # Java 编译检查
 ./mvnw compile
 
-# 测试（129 个）
+# 数据导入（独立 CLI，不启动 Web）
+./import.sh --import-dir=../样例 --report=target/import-report.json
+./import.sh --import-dir=../样例 --dry-run
+
+# 测试（164 个）
 ./mvnw test -Dspring.profiles.active=test
 # 若沙箱/权限环境报 sqlite 原生库解包失败，加：-Djava.io.tmpdir=target/tmp（先 mkdir -p target/tmp）
 
@@ -177,22 +187,23 @@ curl -s http://localhost:18000/api/qa/health
 
 ### LLM 配置层
 - 按用途分组，每组字段：`provider`, `baseUrl`, `model`, `apiKeyEnv`, `enabled`, `timeoutMillis`, `temperature`
-- 默认全部指向本地 Ollama `http://localhost:11434/v1`，模型 `lfm2.5:8b`，`enabled=false`
+- 默认全部指向 DeepSeek `https://api.deepseek.com/v1`，模型 `deepseek-flash`，`enabled=false`（`run.sh` 默认开启 qa/chat）
 - `LlmClientFactory`：根据 `useCase` 名称路由到对应客户端
-- `FallbackLlmClient`：`enabled=false` 或网络异常时兜底，返回 mock 响应
-- `OpenAiCompatibleLlmClient`：OkHttp 适配器，支持任何 OpenAI 兼容接口
+- `FallbackLlmClient`：仅 `enabled=false` 时兜底，返回 mock 响应；**`/api/chat/*` 显式拒绝 fallback**
+- `OpenAiCompatibleLlmClient`：OkHttp 适配器，支持 tools 定义、tool_calls 解析和 SSE 流式响应
+- `OllamaEmbeddingClient`：独立 embedding 客户端，固定 `POST /v1/embeddings`，不读取/打印 API key
 - API Key 读取方式：从 `apiKeyEnv` 指定的环境变量读取，代码和日志中**永不出现**真实 key
 
 ### 测试基础设施
 - 测试基类：`BaseControllerTest`（MockMvc + SecurityMockMvc + 独立测试 DB）
 - 隔离数据库：`target/test-data.db`（通过 `application-test.properties` 配置）
 - **生产数据永不污染**：测试不触碰 `data.db`，启动时通过 `before/after` 时间戳验证
-- 全量测试 129 个，通过 `./mvnw test -Dspring.profiles.active=test` 一键运行
+- 全量测试 164 个，通过 `./mvnw test -Dspring.profiles.active=test` 一键运行
 
 ### Run Script (`run.sh`)
-- 所有 LLM 配置通过环境变量注入：`LLM_QA_PROVIDER`, `LLM_QA_BASE_URL`, `LLM_QA_MODEL`, `LLM_QA_API_KEY_ENV`, `LLM_QA_ENABLED`（四个用途重复此模式）
-- 默认值：`provider=ollama`, `baseUrl=http://localhost:11434/v1`, `model=lfm2.5:8b`, `enabled=false`
-- 切换到真实 LLM：设置 `LLM_QA_ENABLED=true` 并在 shell 中 `export LLM_QA_API_KEY_ENV=DEEPSEEK_API_KEY`（或对应的环境变量键名）
+- 所有 LLM 配置通过环境变量注入：`LLM_QA_PROVIDER`, `LLM_QA_BASE_URL`, `LLM_QA_MODEL`, `LLM_QA_API_KEY_ENV`, `LLM_QA_ENABLED`（qa/planning/profile/sql/chat 五个用途重复此模式）
+- 默认值：`provider=deepseek`, `baseUrl=https://api.deepseek.com/v1`, `model=deepseek-flash`；`qa` / `chat` 默认 `enabled=true`，其余默认 `false`
+- 切换到真实 LLM：在 `.env` 或 shell 中提供 `DEEPSEEK_API_KEY`；其他 provider 可覆盖对应 `LLM_*_*` 变量
 
 ---
 
@@ -247,3 +258,4 @@ curl -s http://localhost:18000/api/qa/health
 | v0.0.1 | 2026-06-27 | 初始后端服务器基础（用户/反馈/画像/目标/历史/问答/LLM 抽象） |
 | v0.0.2 | 2026-06-28 | AI 对话原型（chat_messages + /api/chat）+ Log4j2 日志系统 + 缺陷修复 |
 | v0.0.3 | 2026-09-05 | 移除独立 goals 表并入画像；新增成长数据底座 6 表（加分规则/记录、资源、RAG、能力字典）与基础 API；文档同步 |
+| v0.0.4 | 2026-09-13 | 独立数据导入 CLI；Ollama embedding + SQLite RAG 检索；Agent 多轮 tool-use；`/api/chat/stream` SSE 与 chat_test.html 过程展示；生成用途切 deepseek-flash，`/api/chat/*` 禁止 fallback；164 测试全绿 |

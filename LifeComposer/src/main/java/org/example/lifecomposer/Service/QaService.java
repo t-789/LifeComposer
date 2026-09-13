@@ -50,6 +50,12 @@ public class QaService {
 
             LlmResponseDto llmResponse = client.chat(llmRequest);
 
+            // Only /api/chat/* forbids fallback. Other generative use cases keep
+            // the configurable mock fallback for provider failures.
+            if (llmResponse.isFailed()) {
+                return fallbackMock(userId, request, useCase, llmResponse.getErrorMessage());
+            }
+
             QaResponse response = mapToQaResponse(llmResponse);
             String requestJson = toJson(request);
             String responseJson = toJson(response);
@@ -57,7 +63,7 @@ public class QaService {
             Long historyId = planningHistoryService.appendRecord(
                     userId, "QA", requestJson, responseJson,
                     response.getProvider(), response.getModel(),
-                    response.isMocked() ? "MOCKED" : "SUCCESS",
+                    response.isMocked() ? "MOCKED" : (llmResponse.isFailed() ? "FAILED" : "SUCCESS"),
                     llmResponse.getErrorMessage()
             );
             response.setHistoryId(historyId);

@@ -17,4 +17,14 @@ public class RagChunk {
     /** 逻辑关联 resources.resource_id（业务 id），可为 NULL */
     private String relatedResourceId;
     private String createdAt;
+    /** JSON 数组形式的向量；NULL 表示尚未生成。 */
+    private String embeddingJson;
+    private String embeddingModel;
+    private Integer embeddingDimensions;
+    /** PENDING / SUCCESS / FAILED / SKIPPED */
+    private String embeddingStatus;
+    private String embeddingError;
+    private String embeddingUpdatedAt;
+    /** SHA-256(text) 用于判断是否需要重新生成 embedding。 */
+    private String contentHash;
 }

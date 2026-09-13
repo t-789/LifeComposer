@@ -24,9 +24,9 @@
 | 模块 | 说明 | 当前状态 |
 |------|------|----------|
 | 用户画像与目标输入 | 专业/年级/技能/兴趣/经历/目标 → 能力标签 | **接口已就绪，待前端对接** |
-| 资源建模 | 竞赛/项目/课程 → 结构化标签库 + 向量化 | 未开始 |
-| 适配评估 | 标签匹配 + 文本相似度 + 加权评分 | 未开始 |
-| **成长规划 Agent** | 工作流式 Agent：目标理解 → 工具调用 → 路径规划 | **基础 API 就绪，8月打磨** |
+| 资源建模 | 竞赛/项目/课程 → 结构化标签库 + 向量化 | **v0.0.4 已导入 18 资源 / 28 RAG 切片 / 68 条能力字典引用 + Ollama embedding** |
+| 适配评估 | 标签匹配 + 文本相似度 + 加权评分 | **RAG 余弦检索与 topK/相似度阈值已就绪，加权评分待做** |
+| **成长规划 Agent** | 工作流式 Agent：目标理解 → 工具调用 → 路径规划 | **v0.0.4 多轮 tool-use + SSE 过程展示已实现** |
 | 反馈更新 | 根据用户行为迭代优化画像和推荐 | 未开始 |
 | 互勉与提醒 | 组队推荐、阶段提醒、同伴互勉 | 后续增强 |
 
@@ -34,18 +34,20 @@
 
 - **后端**：Spring Boot 4.0.5 + SQLite + JdbcTemplate ✅ 已搭建
 - **LLM 接入**：OpenAI 兼容协议（OkHttp）✅ 已支持多 provider 切换
-- **本地测试用 LLM**：Ollama `lfm2.5:8b`（默认，无需 key 即可启动）
-- **云端 LLM**：DeepSeek/Qwen(GLM)/GPT(Longxia)，配置 API key 即可
-- **Agent**：工作流式，待 8 月打磨
+- **Embedding**：本地 Ollama `nomic-embed-text-v2-moe:latest`，固定 `POST /v1/embeddings`，向量存 SQLite JSON
+- **生成式 LLM**：v0.0.4 起默认统一切换 DeepSeek `deepseek-flash`；`/api/chat/*` 不使用 fallback
+- **Agent**：多轮 tool-use（白名单只读工具）+ SSE 流式过程展示，v0.0.4 已实现
 - **前端**：待定（App / Web）
 
 ## 进度规划
 
 | 阶段 | 时间 | 内容 |
 |------|------|------|
-| 当前 | 2026-06-27 | **v0.0.1 后端基础服务器完成** ✅ |
-| 主体开发 | 2026-08 | Agent 提示词打磨 + 资源库建设 + 适配算法 |
-| 后续 | 持续 | 问卷/访谈、系统测试、反馈优化、互勉提醒 |
+| v0.0.1 | 2026-06-27 | 后端基础服务器完成 ✅ |
+| v0.0.2 | 2026-06-28 | AI 对话原型 + 日志系统 ✅ |
+| v0.0.3 | 2026-09-05 | 成长数据底座 6 表 + API ✅ |
+| v0.0.4 | 2026-09-13 | 导入 CLI + Ollama embedding/RAG + Agent tool-use + SSE + deepseek-flash ✅ |
+| 后续 | 持续 | 适配算法、问卷/访谈、系统测试、反馈优化、互勉提醒 |
 
 ## 与当前代码的关系
 
@@ -54,9 +56,9 @@
 | 原计划 | 当前状态 |
 |--------|----------|
 | 扩展 `user_profiles` 表（已有 SCHEMA 设计） | ✅ v0.0.1 已建表 + 画像 API |
-| 实现 `college_credit_rules` 和 `credit_activities` 表 | ❌ 待 8 月主体开发 |
-| 实现 `planning_history` 和 `goals` 表 | ✅ v0.0.1 已建表 + API |
-| 接入 DeepSeek API，实现 Agent 问答 | ✅ v0.0.1 LLM 客户端抽象已就绪，Q&A mock API 已就绪；8 月接入真实 Agent |
-| 前端开发（使用当前 external/templates/ 或全新框架） | ❌ 待前端同学启动 |
+| 实现 `college_credit_rules` 和 `credit_activities` 表 | ✅ v0.0.3 建表 + API；v0.0.4 导入 346 条规则 |
+| 实现 `planning_history` 和 `goals` 表 | ✅ goals 已并入 `user_profiles.goals`；planning_history 保持 |
+| 接入 DeepSeek API，实现 Agent 问答 | ✅ v0.0.4 多轮 tool-use + SSE；生成用途切 `deepseek-flash` |
+| 前端开发（使用当前 external/templates/ 或全新框架） | ⏳ 本轮仅改 `chat_test.html` 验证 SSE 技术可行性 |
 
 > **用户调研关键发现与开发重心**（8月主体开发依据）：详见 [SURVEY_FINDINGS.md](./SURVEY_FINDINGS.md)

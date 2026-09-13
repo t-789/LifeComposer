@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 
 @Repository
@@ -153,6 +154,32 @@ public class ResourceRepository {
                 resource.getNotesJson(),
                 resource.getDataQuality(),
                 resource.getUpdatedAt());
+    }
+
+    /** 关键词/类型/难度/专业大类组合检索；空参数忽略。 */
+    public List<Resource> search(String keyword, String type, String difficulty, String majorCategory) {
+        StringBuilder sql = new StringBuilder("SELECT * FROM resources WHERE 1 = 1");
+        List<Object> params = new ArrayList<>();
+        if (keyword != null && !keyword.isBlank()) {
+            sql.append(" AND (name LIKE ? OR description LIKE ?)");
+            String like = "%" + keyword.trim() + "%";
+            params.add(like);
+            params.add(like);
+        }
+        if (type != null && !type.isBlank()) {
+            sql.append(" AND type = ?");
+            params.add(type.trim());
+        }
+        if (difficulty != null && !difficulty.isBlank()) {
+            sql.append(" AND difficulty = ?");
+            params.add(difficulty.trim());
+        }
+        if (majorCategory != null && !majorCategory.isBlank()) {
+            sql.append(" AND target_majors_json LIKE ?");
+            params.add("%\"" + majorCategory.trim() + "\"%");
+        }
+        sql.append(" ORDER BY id ASC");
+        return jdbcTemplate.query(sql.toString(), RESOURCE_ROW_MAPPER, params.toArray());
     }
 
     public void createTableIfNeeded() {
