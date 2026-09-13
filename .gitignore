@@ -42,3 +42,4 @@ Desktop.ini
 # ---------- 本地草稿 ----------
 *.local.md
 /scratch/
+/plans/

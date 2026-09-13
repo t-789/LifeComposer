@@ -224,7 +224,8 @@ curl -s http://localhost:18000/api/qa/health
    - 示例文件：[release_notes_example.html](LifeComposer/external/templates/release_notes_example.html)
    - 要求格式尽量统一。如果需要新的样式，可以添加，但需要在更新后向我汇报
    - 维护约定：在新版本现有版本容器之前插入新的更新日志，每个新版本是一个 <div class="container"> 容器块。顺序：新版本在顶部，旧版本依次往下（最新在最上） 
-2. 现在可以使用的LLM api有：deepseek、qwen（百炼模型）、glm、gpt（Longxia api）、ollama本地模型（qwen 3.5:9b, lfm2.5:8b），api key在环境变量中，请不要阅读，需要api key时指出填写位置，由我手动填写
+   - 同时在AGENTS.md（本文件）最后添加相应历史版本信息
+2. 现在可以使用的LLM api有：deepseek、qwen（百炼模型）、glm、gpt（Longxia api）、ollama本地模型（qwen 3.5:9b），api key在环境变量中，请不要阅读，需要api key时指出填写位置，由我手动填写
 
 ---
 
