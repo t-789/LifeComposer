@@ -68,3 +68,5 @@ Desktop.ini
 /大学生成长路径与竞赛参与需求调研-默认报告.pdf
 # 工具快照
 /LifeComposer/.merkle-snapshot.json
+# 根目录 opencode 工具测试（与 LifeComposer 项目无关）
+/tests/
