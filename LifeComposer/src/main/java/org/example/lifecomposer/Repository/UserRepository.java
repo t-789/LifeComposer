@@ -33,6 +33,10 @@ public class UserRepository {
             user.setAvatar(rs.getString("avatar"));
             user.setCreatedAt(rs.getTimestamp("created_at"));
             user.setUpdatedAt(rs.getTimestamp("updated_at"));
+            user.setPasswordResetRequired(rs.getBoolean("password_reset_required"));
+            user.setTempPasswordExpiresAt(rs.getTimestamp("temp_password_expires_at"));
+            user.setPasswordChangedAt(rs.getTimestamp("password_changed_at"));
+            user.setCredentialVersion(rs.getInt("credential_version"));
             return user;
         }
     };
@@ -48,7 +52,11 @@ public class UserRepository {
                   ban_end_time TIMESTAMP NULL,
                   avatar TEXT NULL,
                   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  password_reset_required BOOLEAN NOT NULL DEFAULT 0,
+                  temp_password_expires_at TIMESTAMP NULL,
+                  password_changed_at TIMESTAMP NULL,
+                  credential_version INTEGER NOT NULL DEFAULT 1
                 )
                 """;
         jdbcTemplate.execute(sql);
@@ -92,6 +100,28 @@ public class UserRepository {
 
         if (!hasColumn("users", "updated_at")) {
             jdbcTemplate.execute("ALTER TABLE users ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
+        }
+
+        // v0.0.6 review follow-up: real temporary-password state plus a credential
+        // generation counter used to invalidate sessions after a password change.
+        if (!hasColumn("users", "password_reset_required")) {
+            jdbcTemplate.execute(
+                    "ALTER TABLE users ADD COLUMN password_reset_required BOOLEAN NOT NULL DEFAULT 0");
+        }
+
+        if (!hasColumn("users", "temp_password_expires_at")) {
+            jdbcTemplate.execute(
+                    "ALTER TABLE users ADD COLUMN temp_password_expires_at TIMESTAMP NULL");
+        }
+
+        if (!hasColumn("users", "password_changed_at")) {
+            jdbcTemplate.execute(
+                    "ALTER TABLE users ADD COLUMN password_changed_at TIMESTAMP NULL");
+        }
+
+        if (!hasColumn("users", "credential_version")) {
+            jdbcTemplate.execute(
+                    "ALTER TABLE users ADD COLUMN credential_version INTEGER NOT NULL DEFAULT 1");
         }
     }
 
@@ -144,13 +174,99 @@ public class UserRepository {
         return rows > 0;
     }
 
+    /**
+     * Review follow-up (P1): atomic demotion that can never remove the last
+     * loginable administrator. The guard lives inside the UPDATE statement and
+     * is restricted to a single row, so there is no read-then-write window on the
+     * database side. Callers additionally run inside a write transaction
+     * (see {@code UserService#revokeAdminPermission}).
+     *
+     * @return 1 when the user was demoted, 0 when it is not an administrator or
+     *         demoting it would leave the system without a loginable admin.
+     */
+    public int revokeAdminIfNotLast(int userId) {
+        return jdbcTemplate.update("""
+                UPDATE users
+                SET type = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                  AND type = 2
+                  AND (SELECT COUNT(*) FROM users WHERE type = 2 AND is_banned = 0) > 1
+                """, userId);
+    }
+
+    /**
+     * Review follow-up (P1): atomic ban that can never ban the last loginable
+     * administrator. Banning an already banned account stays allowed (it only
+     * refreshes the end time).
+     *
+     * @return 1 when the ban was applied, 0 when the user does not exist or the
+     *         statement would leave the system without a loginable admin.
+     */
+    public int banIfNotLastLoginableAdmin(int userId, Timestamp banEndTime) {
+        return jdbcTemplate.update("""
+                UPDATE users
+                SET is_banned = 1, ban_end_time = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                  AND NOT (type = 2 AND is_banned = 0
+                           AND (SELECT COUNT(*) FROM users WHERE type = 2 AND is_banned = 0) <= 1)
+                """, banEndTime, userId);
+    }
+
     public boolean updateUserAvatar(int userId, String avatarPath) {
         int rows = jdbcTemplate.update("UPDATE users SET avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", avatarPath, userId);
         return rows > 0;
     }
 
+    /**
+     * Any password change bumps {@code credential_version}, which is what makes
+     * already-issued sessions detectable (and therefore invalidatable) without a
+     * server-side session registry.
+     */
     public boolean updateUserPassword(int userId, String passwordHash) {
-        int rows = jdbcTemplate.update("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", passwordHash, userId);
+        int rows = jdbcTemplate.update("""
+                        UPDATE users
+                        SET password_hash = ?,
+                            password_changed_at = CURRENT_TIMESTAMP,
+                            credential_version = credential_version + 1,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                passwordHash, userId);
+        return rows > 0;
+    }
+
+    /**
+     * Installs an administrator-issued temporary password: it must be replaced
+     * before anything else can be used, and it stops working at {@code expiresAt}.
+     */
+    public boolean updateUserPasswordAsTemporary(int userId, String passwordHash, Timestamp expiresAt) {
+        int rows = jdbcTemplate.update("""
+                        UPDATE users
+                        SET password_hash = ?,
+                            password_reset_required = 1,
+                            temp_password_expires_at = ?,
+                            password_changed_at = CURRENT_TIMESTAMP,
+                            credential_version = credential_version + 1,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                passwordHash, expiresAt, userId);
+        return rows > 0;
+    }
+
+    /** Replaces the temporary password and clears the forced-change state. */
+    public boolean updateUserPasswordAndClearReset(int userId, String passwordHash) {
+        int rows = jdbcTemplate.update("""
+                        UPDATE users
+                        SET password_hash = ?,
+                            password_reset_required = 0,
+                            temp_password_expires_at = NULL,
+                            password_changed_at = CURRENT_TIMESTAMP,
+                            credential_version = credential_version + 1,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                passwordHash, userId);
         return rows > 0;
     }
 
@@ -167,5 +283,24 @@ public class UserRepository {
     public long countAdminUsers() {
         Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM users WHERE type = 2", Long.class);
         return count == null ? 0 : count;
+    }
+
+    /**
+     * Milestone 6: administrators that can still authenticate. A banned account
+     * is excluded; an expired ban is auto-cleared on the next login, so it is
+     * deliberately not counted here (conservative: it may block a demotion that
+     * would in fact have been safe).
+     */
+    public long countLoginableAdmins() {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM users WHERE type = 2 AND is_banned = 0", Long.class);
+        return count == null ? 0 : count;
+    }
+
+    /** Password generation currently stored for a user (null when it is gone). */
+    public Integer findCredentialVersion(int userId) {
+        List<Integer> versions = jdbcTemplate.queryForList(
+                "SELECT credential_version FROM users WHERE id = ?", Integer.class, userId);
+        return versions.isEmpty() ? null : versions.get(0);
     }
 }

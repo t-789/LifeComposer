@@ -41,6 +41,8 @@
 #   cp .env.example .env
 #   # then add your DeepSeek API key to .env or export it:
 #   export DEEPSEEK_API_KEY=your-api-key-here
+#   # the first start on an empty database also needs a strong admin password:
+#   #   LIFECOMPOSER_INITIAL_ADMIN_PASSWORD=<at least 12 chars, you choose it>
 #   ./run.sh
 
 cd "$(dirname "$0")" || exit 1
@@ -50,6 +52,14 @@ if [ -f .env ]; then
     set -a
     source .env
     set +a
+fi
+
+# Milestone 6: the initial administrator password is only ever read from this
+# environment variable. run.sh passes it through and never prints its value.
+if [ -z "${LIFECOMPOSER_INITIAL_ADMIN_PASSWORD:-}" ]; then
+    echo "Note: LIFECOMPOSER_INITIAL_ADMIN_PASSWORD is not set."
+    echo "      Required only when the database has no administrator yet, or when"
+    echo "      a legacy 'admin/admin' account still needs a forced rotation."
 fi
 
 echo "=== LifeComposer Backend ==="

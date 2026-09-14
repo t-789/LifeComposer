@@ -1,5 +1,6 @@
 package org.example.lifecomposer.Security;
 
+import org.example.lifecomposer.Repository.UserRepository;
 import org.example.lifecomposer.config.AppSecurityProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
@@ -11,6 +12,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
@@ -25,9 +27,11 @@ import java.util.List;
 public class WebSecurityConfig {
 
     private final AppSecurityProperties securityProperties;
+    private final UserRepository userRepository;
 
-    public WebSecurityConfig(AppSecurityProperties securityProperties) {
+    public WebSecurityConfig(AppSecurityProperties securityProperties, UserRepository userRepository) {
         this.securityProperties = securityProperties;
+        this.userRepository = userRepository;
     }
 
     @Bean
@@ -40,6 +44,11 @@ public class WebSecurityConfig {
                         .csrfTokenRepository(csrfTokenRepository())
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
                 .addFilterBefore(new XsrfHeaderAliasFilter(), CsrfFilter.class)
+                // Review follow-up: credential-generation / forced-password-change
+                // guard, evaluated before authorization so a stale session is
+                // answered with 401 instead of reaching a controller.
+                .addFilterBefore(new SessionCredentialGuardFilter(userRepository),
+                        AuthorizationFilter.class)
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
@@ -64,7 +73,15 @@ public class WebSecurityConfig {
                                 "/api/users/admin/**",
                                 "/api/users/all"
                         ).hasRole("ADMIN")
+                        // Milestone 7: the whole admin console (API + pages) is
+                        // admin-only at the filter-chain level, in addition to the
+                        // per-method checks inside the controllers.
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/admin", "/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/qa/**").authenticated()
+                        // Review follow-up: self-service password change (also the
+                        // only call a forced-change session can make).
+                        .requestMatchers("/api/users/password").authenticated()
                         .requestMatchers("/api/users/current", "/api/users/logout").authenticated()
                         .requestMatchers("/api/profiles/**").authenticated()
                         .requestMatchers("/api/planning/**").authenticated()

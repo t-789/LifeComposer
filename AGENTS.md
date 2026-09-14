@@ -4,9 +4,9 @@
 
 大学生成长规划助手后端。基于 Spring Boot 4.0.5 + SQLite + JdbcTemplate。
 
-### 当前状态（2026-09-13 v0.0.5 后）
+### 当前状态（2026-09-14 v0.0.6 后）
 
-基础后端 + 数据底座 + Agent tool-use 已搭建完成，包含：
+基础后端 + 数据底座 + Agent tool-use + 运维控制台已搭建完成，包含：
 - 用户系统（注册/登录/Session/Admin）
 - 反馈系统（用户反馈 + 系统错误自动收集）
 - 用户画像 API（`/api/profiles/me`，含 availableTime / goals 字段）
@@ -17,13 +17,15 @@
 - **应用安全加固（Milestone 5）**：CSRF（XSRF-TOKEN Cookie + X-XSRF-TOKEN 头 + `/api/csrf`）、Session Cookie HttpOnly/SameSite=Lax、登录后重建 Session、显式 CORS 来源
 - **AI 使用控制**：每用户 5 次/分钟 + 100 次/天（Asia/Shanghai），新增 `chat_usage_daily` 用量表；超限 429；`max_tokens` 强制 1024；管理员可重置当日额度并写审计日志
 - **基础防护**：注册/登录限速与失败临时锁定、SSE 超时可配置、输入长度限制、管理员 API 可选内网限制
-- **独立数据导入 CLI**（`DataImportCli` + `import.sh`，`--import-dir` 执行完即退出，不启动 Web、不初始化默认管理员）
+- **管理员初始化与密码安全（Milestone 6）**：移除固定 `admin/admin`；空库首次启动必须提供环境变量 `LIFECOMPOSER_INITIAL_ADMIN_PASSWORD`（缺失/弱密码 fail-fast，只提示变量名）；存量 `admin/admin` 强制轮换；管理员下发**真正的临时密码**（状态 + 有效期 + 首次登录强制修改 + 密码变更即销毁旧会话）；撤销/封禁最后一个可登录管理员被原子拒绝（并发安全）
+- **运维控制台（Milestone 7）**：`/api/admin/**` 只读管理 API（12 张表 + 总览、服务端分页 ≤200、白名单筛选排序、每管理员限流、审计日志、允许字段清单 DTO）与统一布局的 `/admin/**` 控制台（`external/static/admin.js` + `admin.css`，全部 textContent 渲染，无 HTML 注入面）
+- **独立数据导入 CLI**（`DataImportCli` + `import.sh`，`--import-dir` 执行完即退出，不启动 Web、不初始化管理员）
 - **Ollama embedding + RAG 检索**（rag_chunks 7 个新字段 + `RagSearchService`；topK=5、minSimilarity=0.2）
 - **Agent 多轮 tool-use**（5 个白名单只读工具 + ToolRegistry + AgentOrchestrator，最多 8 轮）
 - **SSE 流式过程展示**（thinking 计时 / tool_call / tool_result / token / assistant_message / error / done）
 - 生成式 LLM 默认统一切换 DeepSeek `deepseek-flash`；`/api/chat/*` 不使用 fallback（503 / SSE error）
 - 启动脚本 `run.sh`（环境变量加载，密钥安全）
-- 188 个自动化测试，全部通过
+- 311 个自动化测试，全部通过
 
 ### 下一阶段目标
 
@@ -57,10 +59,12 @@ LifeComposer/                          # 当前 Spring Boot 后端
    │   └── application-test.properties # 测试隔离配置（使用 target/test-data.db）
    ├── external/
    │   ├── templates/                  # Thymeleaf 页面
-   │   │   └── release_notes.html      # 发布说明（v0.0.1 起）
-   │   └── static/                     # 静态资源（apiList.txt 等）
+   │   │   ├── release_notes.html      # 发布说明（v0.0.1 起）
+   │   │   └── admin_*.html            # v0.0.6 运维控制台页面（共用 admin.js 布局）
+   │   └── static/                     # 静态资源（apiList.txt、csrf.js、admin.js、admin.css）
    ├── run.sh                          # 启动脚本（env 变量注入，无密钥）
    ├── import.sh                       # 独立数据导入 CLI 包装脚本
+   ├── .env.example                    # 环境变量样例（含 LIFECOMPOSER_INITIAL_ADMIN_PASSWORD 占位符）
    └── data.db                         # SQLite 数据文件 (自动创建，被 .gitignore)
 
 .omo/
@@ -100,6 +104,8 @@ PROJECT_PLAN.md                      # 项目规划、进度与调研数据
 | ORM | JdbcTemplate（非 JPA） | 手动 SQL 控制，适合 AI 生成的模式 |
 | 认证 | Session-based + Spring Security | 配合 Thymeleaf 管理端页面 |
 | 密码 | BCrypt （通过 `PasswordEncoder`） | Spring Security 内置 |
+| 初始管理员 | 环境变量 `LIFECOMPOSER_INITIAL_ADMIN_PASSWORD` | 禁止硬编码默认口令；空库/存量弱口令 fail-fast，明文永不入库/入日志 |
+| 管理查询 | 专用只读 Repository + 允许字段清单投影 | 不做通用 SQLite 浏览器；白名单排序，用户输入不进入 SQL 文本 |
 | Java | 25 + Spring Boot 4.0.5 | 最新长期支持 |
 | 构建 | Maven （`./mvnw`） | Wrapper 已包含，无需本地安装 |
 | LLM 兼容层 | OkHttp + Gson (OpenAI 兼容协议) | 抽象出 `LlmClient`，支持 tools/SSE；`/api/chat/*` 禁用 fallback，其余用途保留可配置 fallback |
@@ -117,7 +123,7 @@ PROJECT_PLAN.md                      # 项目规划、进度与调研数据
 ./import.sh --import-dir=../样例 --report=target/import-report.json
 ./import.sh --import-dir=../样例 --dry-run
 
-# 测试（164 个）
+# 测试（311 个）
 ./mvnw test -Dspring.profiles.active=test
 # 若沙箱/权限环境报 sqlite 原生库解包失败，加：-Djava.io.tmpdir=target/tmp（先 mkdir -p target/tmp）
 
@@ -153,10 +159,25 @@ curl -s http://localhost:18000/api/qa/health
 - 支持 `PRAGMA table_info` 查询表结构
 - 外键约束默认关闭，当前未启用
 
-### 数据库初始化（默认管理员）
-- `DatabaseInitializer` 在空库启动时自动插入默认管理员账户 `admin` / `admin`
-- **这是预期行为**，用于本地开发便利。该账户在首次启动时自动创建，生产部署前应修改密码或禁用
-- 当前项目处于开发阶段，暂时忽略默认管理员账户的安全隐患
+### 数据库初始化（管理员账户 · v0.0.6 起）
+- **固定 `admin/admin` 已于 v0.0.6 移除**。`DatabaseInitializer.bootstrapAdministrator()` 委托 `AdminBootstrapService`：
+  - 库中无管理员 → 必须从环境变量 `LIFECOMPOSER_INITIAL_ADMIN_PASSWORD` 读取初始密码（`application.properties` 绑定 `lifecomposer.admin.initial-password`）；缺失、空白或不满足强度要求时 **fail-fast**，异常信息只包含变量名
+  - 强度规则（`AdminPasswordPolicy`）：≥ `lifecomposer.admin.min-password-length`（默认 12）、≤ 72、无空白字符、不在弱密码表（admin/000000/testuser/...）、非单字符重复
+  - 已有管理员 → 忽略该变量，且**绝不覆盖**现有密码
+  - 检测到 `admin` 账户的 BCrypt 哈希仍匹配历史默认口令 `admin` → 强制要求提供新密码并立即轮换（`AUDIT event=admin_password_rotated`），否则拒绝启动
+  - 导入 CLI（`lifecomposer.import.mode=true`）跳过该步骤，无需管理员密码
+- 数据库中只保存 BCrypt 哈希；明文密码永不进入日志、异常、响应或报告
+- `DatabaseInitializer.createAdminConsoleIndexes()` 幂等补齐 v0.0.6 管理控制台索引（详见 `SCHEMA.md`）
+
+### 会话与临时密码（v0.0.6 审查整改）
+- `users` 新增 `password_reset_required` / `temp_password_expires_at` / `password_changed_at` / `credential_version` 四列（`UserRepository.migrateUserSchema()` 幂等补齐）
+- `Security/SessionCredential` 把登录时的 `credential_version` 写入会话；`Security/SessionCredentialGuardFilter`（挂在 Spring Security 过滤器链 `AuthorizationFilter` 之前）每个请求比对数据库版本：
+  - 版本不一致 → 销毁会话 + 401 `SESSION_EXPIRED`（密码变更即登出所有旧会话，发起修改的会话会被重新盖章而保留）
+  - 会话带临时密码状态 → 只允许 `POST /api/users/password`、`/api/users/current`、`/api/users/logout`、`/api/csrf`、`/front/change-password`，其余 401 `PASSWORD_CHANGE_REQUIRED`；临时密码过期则直接销毁会话
+- 临时密码有效期由 `lifecomposer.admin.temp-password-ttl-minutes`（默认 1440）控制；普通用户改密长度下限 `lifecomposer.admin.user-min-password-length`（默认 8），管理员仍为 12
+- 最后管理员保护改为原子 SQL：`revokeAdminIfNotLast()` / `banIfNotLastLoginableAdmin()` 把数量条件写在 `UPDATE ... WHERE` 中（单行），并配合 `@Transactional` + `transaction_mode=immediate`；控制器把该情况映射为 409 `LAST_ADMIN_PROTECTED`
+- `GlobalExceptionHandler` 新增 `HttpMessageNotReadableException` → 400（此前缺失请求体会落到通用分支返回 500 并写入 feedback）
+
 
 ### Exception 层
 - `GlobalExceptionHandler` 会截获所有 404/500 并自动记录到 feedback 表
@@ -176,7 +197,8 @@ curl -s http://localhost:18000/api/qa/health
 - 成长资源：`/api/resources/*`
 - RAG 切片：`/api/rag-chunks/*`
 - 能力标签/字典：`/api/capability-tags/*`、`/api/capability-reference/*`
-- 页面路由：通过 `HomeController` 的 `@Controller` 映射
+- 管理控制台：`/api/admin/*`（v0.0.6，只读；`AdminController` + `AdminConsoleService` + `AdminQueryRepository`）
+- 页面路由：通过 `HomeController` 的 `@Controller` 映射（`/admin/**` 共 13 个控制台视图）
 
 ### Security 配置
 - 认证方式：JSESSIONID Cookie（Session-based）
@@ -185,7 +207,8 @@ curl -s http://localhost:18000/api/qa/health
 - CORS：默认本地开发环境（`http://localhost:*`, `http://127.0.0.1:*`, `https://localhost:*`），可通过 `app.security.allowed-origins` 显式配置
 - 详细端点权限（公开/ADMIN/已登录）：详见 [`API.md`](./API.md) 的「认证与权限说明」章节
 - 公开端点：`/api/csrf`, `/api/users/register`, `/api/users/login`, `/api/feedback/submit`, `/api/feedback/system-error`, `/api/qa/health`
-- 需要 ADMIN 角色：反馈管理、用户管理、封禁操作、POST `/api/college-credit-rules`（控制器内校验 ROLE_ADMIN）
+- 需要 ADMIN 角色：`/api/admin/**`、`/admin` 与 `/admin/**`（v0.0.6 过滤链级别 `hasRole("ADMIN")`）、反馈管理、用户管理、封禁操作、POST `/api/college-credit-rules`（控制器内校验 ROLE_ADMIN）
+- **管理控制台边界（v0.0.6）**：只读 + 明确业务动作（封禁/角色/临时密码/当日额度/反馈处理）；不提供任意 SQL、任意表名/列名、CSV/JSON 全量导出或数据库下载；查询走允许字段清单投影，永不返回 `password_hash`、`embedding_json`、`certificate_ref`（只给 `hasCertificate`）、列表中的 `preferences_json` 与 `stack_trace`
 - 需要认证：`/api/users/current`, `/api/users/logout`, `/api/profiles/**`, `/api/planning/**`, `/api/qa/ask`, `/api/chat/**`, `/api/college-credit-rules/**`, `/api/credit-activities/**`, `/api/resources/**`, `/api/rag-chunks/**`, `/api/capability-tags/**`, `/api/capability-reference/**`
 - JSESSIONID Cookie 传递认证状态
 - CORS 已限制为本地开发环境（`http://localhost:*`, `http://127.0.0.1:*`, `https://localhost:*`）
@@ -203,12 +226,16 @@ curl -s http://localhost:18000/api/qa/health
 - 测试基类：`BaseControllerTest`（MockMvc + SecurityMockMvc + 独立测试 DB）
 - 隔离数据库：`target/test-data.db`（通过 `application-test.properties` 配置）
 - **生产数据永不污染**：测试不触碰 `data.db`，启动时通过 `before/after` 时间戳验证
-- 全量测试 188 个，通过 `./mvnw test -Dspring.profiles.active=test` 一键运行
+- 全量测试 311 个，通过 `./mvnw test -Dspring.profiles.active=test` 一键运行
+- 测试专用初始管理员密码写在 `application-test.properties`（`lifecomposer.admin.initial-password`），生产规则不降级；`BaseControllerTest.loginAsAdmin()` 使用强口令 `AdminTestPassw0rd!2026`，不再写入历史弱口令
+- `application-test.properties` 的 `spring.thymeleaf.prefix` 指向 `file:./external/templates/`，以便对 `/admin/**` 页面路由做端到端断言
+- `org.example.lifecomposer.support.AuditLogCapture` 可挂载 Log4j2 appender 断言审计日志内容（含"日志不含敏感值"的负向断言）
 
 ### Run Script (`run.sh`)
 - 所有 LLM 配置通过环境变量注入：`LLM_QA_PROVIDER`, `LLM_QA_BASE_URL`, `LLM_QA_MODEL`, `LLM_QA_API_KEY_ENV`, `LLM_QA_ENABLED`（qa/planning/profile/sql/chat 五个用途重复此模式）
 - 默认值：`provider=deepseek`, `baseUrl=https://api.deepseek.com/v1`, `model=deepseek-flash`；`qa` / `chat` 默认 `enabled=true`，其余默认 `false`
 - 切换到真实 LLM：在 `.env` 或 shell 中提供 `DEEPSEEK_API_KEY`；其他 provider 可覆盖对应 `LLM_*_*` 变量
+- 首次在空库启动前，还需在 `.env` 中自行填写 `LIFECOMPOSER_INITIAL_ADMIN_PASSWORD`（≥12 字符，禁止弱口令）；`run.sh` 只透传该变量并在缺失时打印提示，绝不打印其值
 
 ---
 
@@ -265,3 +292,4 @@ curl -s http://localhost:18000/api/qa/health
 | v0.0.3 | 2026-09-05 | 移除独立 goals 表并入画像；新增成长数据底座 6 表（加分规则/记录、资源、RAG、能力字典）与基础 API；文档同步 |
 | v0.0.4 | 2026-09-13 | 独立数据导入 CLI；Ollama embedding + SQLite RAG 检索；Agent 多轮 tool-use；`/api/chat/stream` SSE 与 chat_test.html 过程展示；生成用途切 deepseek-flash，`/api/chat/*` 禁止 fallback；164 测试全绿 |
 | v0.0.5 | 2026-09-13 | Milestone 5 安全加固：CSRF、Session 加固、聊天分钟/每日限流与 chat_usage_daily、max_tokens=1024、管理员重置当日额度、注册/登录限速与审计日志；188 测试全绿 |
+| v0.0.6 | 2026-09-14 | Milestone 6 管理员初始化与密码安全整改（`LIFECOMPOSER_INITIAL_ADMIN_PASSWORD` fail-fast、存量弱口令强制轮换、临时密码重置不回显、最后一个管理员保护）+ Milestone 7 数据库管理与调试控制台（`/api/admin/**` 只读 API：分页/白名单筛选排序/限流/审计/字段清单；`/admin/**` 13 个统一布局视图，全部 textContent 渲染）；审查整改：临时密码状态/有效期/首次登录强制修改/旧会话自动失效、最后管理员保护改为原子 SQL + 立即写事务（并发安全）、管理员确认为可信调试角色（详见 API.md 信任模型）；311 测试全绿 |

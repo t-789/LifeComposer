@@ -44,7 +44,12 @@ public class AdminIntranetGuardFilter extends OncePerRequestFilter {
                 || uri.equals("/api/users/all")
                 || uri.startsWith("/api/feedback/all")
                 || uri.startsWith("/api/feedback/type/")
-                || (uri.startsWith("/api/feedback/") && uri.endsWith("/resolve"));
+                || (uri.startsWith("/api/feedback/") && uri.endsWith("/resolve"))
+                // Milestone 7: the whole debug console follows the same optional
+                // intranet restriction as the legacy admin endpoints.
+                || uri.startsWith("/api/admin/")
+                || uri.equals("/admin")
+                || uri.startsWith("/admin/");
     }
 
     private boolean isPrivateAddress(String address) {

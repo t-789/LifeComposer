@@ -8,6 +8,8 @@ import org.example.lifecomposer.dto.LoginRequest;
 import org.example.lifecomposer.dto.RegisterRequest;
 import org.example.lifecomposer.Entity.User;
 import org.example.lifecomposer.Entity.UserType;
+import org.example.lifecomposer.Security.SessionCredential;
+import org.example.lifecomposer.Service.AdminPasswordPolicy;
 import org.example.lifecomposer.Service.LoginAttemptService;
 import org.example.lifecomposer.Service.RegistrationRateLimiter;
 import org.example.lifecomposer.Service.UserService;
@@ -22,8 +24,11 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
 
+import java.sql.Timestamp;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/users")
@@ -38,19 +43,22 @@ public class UserController {
     private final RegistrationRateLimiter registrationRateLimiter;
     private final LoginAttemptService loginAttemptService;
     private final AppSecurityProperties securityProperties;
+    private final AdminPasswordPolicy adminPasswordPolicy;
 
     public UserController(UserService userService,
                           UserRepository userRepository,
                           UserDetailsService userDetailsService,
                           RegistrationRateLimiter registrationRateLimiter,
                           LoginAttemptService loginAttemptService,
-                          AppSecurityProperties securityProperties) {
+                          AppSecurityProperties securityProperties,
+                          AdminPasswordPolicy adminPasswordPolicy) {
         this.userService = userService;
         this.userRepository = userRepository;
         this.userDetailsService = userDetailsService;
         this.registrationRateLimiter = registrationRateLimiter;
         this.loginAttemptService = loginAttemptService;
         this.securityProperties = securityProperties;
+        this.adminPasswordPolicy = adminPasswordPolicy;
     }
 
     @PostMapping("/register")
@@ -95,8 +103,22 @@ public class UserController {
             if (user == null) {
                 loginAttemptService.recordFailure(username, clientIp);
                 LOG.warn("AUDIT event=login_failure username={} ip={}", username, clientIp);
-                return ResponseEntity.badRequest().body("登录失败，用户名或密码错误");
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "BAD_CREDENTIALS", "message", "登录失败，用户名或密码错误"));
             }
+
+            // Review follow-up: an administrator-issued temporary password really
+            // expires — after the deadline the account cannot log in any more.
+            if (Boolean.TRUE.equals(user.getPasswordResetRequired())
+                    && userService.isTemporaryPasswordExpired(user)) {
+                loginAttemptService.recordFailure(username, clientIp);
+                LOG.warn("AUDIT event=login_rejected_temp_password_expired username={} ip={}",
+                        username, clientIp);
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "TEMP_PASSWORD_EXPIRED",
+                                "message", "临时密码已过期，请联系管理员重新下发"));
+            }
+
             loginAttemptService.recordSuccess(username, clientIp);
 
             UserDetails userDetails = userDetailsService.loadUserByUsername(request.getUsername());
@@ -119,14 +141,84 @@ public class UserController {
                     HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
                     SecurityContextHolder.getContext()
             );
+            SessionCredential.bind(session, user);
 
-            return ResponseEntity.ok("登录成功");
+            boolean mustChangePassword = Boolean.TRUE.equals(user.getPasswordResetRequired());
+            if (mustChangePassword) {
+                LOG.info("AUDIT event=login_ok_password_change_required username={} ip={}",
+                        username, clientIp);
+            }
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("message", "登录成功");
+            body.put("username", user.getUsername());
+            body.put("type", user.getType());
+            body.put("passwordChangeRequired", mustChangePassword);
+            body.put("tempPasswordExpiresAt", user.getTempPasswordExpiresAt());
+            return ResponseEntity.ok(body);
         } catch (IllegalStateException e) {
             loginAttemptService.recordFailure(username, clientIp);
             LOG.warn("AUDIT event=login_failure username={} ip={} reason={}",
                     username, clientIp, e.getMessage());
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "LOGIN_REJECTED", "message", String.valueOf(e.getMessage())));
         }
+    }
+
+    /**
+     * Review follow-up (P1/P2): self-service password replacement. It is the only
+     * endpoint reachable while a session is flagged
+     * {@code password_reset_required}, and on success the session is re-stamped so
+     * that the device performing the change stays logged in while every other
+     * session of that account is invalidated by the credential-version bump.
+     */
+    @PostMapping("/password")
+    public ResponseEntity<?> changePassword(@RequestBody(required = false) Map<String, String> payload,
+                                            HttpServletRequest request,
+                                            Authentication authentication) {
+        HttpSession session = request.getSession(false);
+        User current = currentUser(session, authentication);
+        if (current == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "UNAUTHORIZED", "message", "用户未登录"));
+        }
+
+        String currentPassword = payload == null ? null : payload.get("currentPassword");
+        String newPassword = payload == null ? null : payload.get("newPassword");
+        boolean wasForced = Boolean.TRUE.equals(current.getPasswordResetRequired());
+
+        String error = userService.changeOwnPassword(current.getId(), currentPassword, newPassword,
+                current.getType() != null && current.getType() == UserType.ADMIN);
+        if (error != null) {
+            LOG.warn("AUDIT event=password_change_rejected username={} reason={}",
+                    current.getUsername(), error);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "PASSWORD_REJECTED", "message", error));
+        }
+
+        // Re-read so the session carries the new credential generation.
+        User refreshed = userService.getById(current.getId());
+        session.setAttribute("user", refreshed);
+        SessionCredential.bind(session, refreshed);
+
+        LOG.info("AUDIT event=password_changed username={} forced={}",
+                refreshed.getUsername(), wasForced);
+        return ResponseEntity.ok(Map.of("message", "密码已更新"));
+    }
+
+    /** Resolves the session user, falling back to the authenticated principal. */
+    private User currentUser(HttpSession session, Authentication authentication) {
+        if (session != null) {
+            Object sessionUser = session.getAttribute("user");
+            if (sessionUser instanceof User user && user.getId() != null) {
+                return userService.getById(user.getId());
+            }
+        }
+        if (authentication != null && authentication.isAuthenticated()
+                && !"anonymousUser".equals(authentication.getPrincipal())) {
+            return userService.getByUsername(authentication.getName());
+        }
+        return null;
     }
 
     private String clientIp(HttpServletRequest request) {
@@ -203,26 +295,46 @@ public class UserController {
         if (isNotAdmin(authentication)) {
             return ResponseEntity.status(403).body("权限不足");
         }
-        boolean success = userService.revokeAdminPermission(userId);
-        return success ? ResponseEntity.ok("用户" + userId + "已被撤销管理员权限")
-                : ResponseEntity.badRequest().body("用户" + userId + "不存在");
+        return removalResponse(userService.revokeAdminPermission(userId), "撤销管理员权限",
+                "用户" + userId + "已被撤销管理员权限");
     }
 
     @PutMapping("/{userId}/ban")
     public ResponseEntity<?> banUser(@PathVariable int userId,
-                                     @RequestBody Map<String, String> payload,
+                                     @RequestBody(required = false) Map<String, String> payload,
                                      Authentication authentication) {
         if (isNotAdmin(authentication)) {
             return ResponseEntity.status(403).body("权限不足");
         }
 
-        String banTime = payload.get("banTime");
+        // Review follow-up: a missing body is a client error (400), not a 500 that
+        // would also be recorded as a system error in the feedback table.
+        String banTime = payload == null ? null : payload.get("banTime");
         if (banTime == null || banTime.isBlank()) {
-            return ResponseEntity.badRequest().body("封禁时间不能为空");
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "INVALID_INPUT", "message", "封禁时间不能为空"));
         }
 
-        boolean success = userService.banUser(userId, banTime);
-        return success ? ResponseEntity.ok("用户封禁操作完成") : ResponseEntity.badRequest().body("封禁操作失败");
+        return removalResponse(userService.banUser(userId, banTime), "封禁", "用户封禁操作完成");
+    }
+
+    /**
+     * Maps the race-free removal outcome to an explicit status: 404 for a missing
+     * user, 409 when the last loginable administrator is protected.
+     */
+    private ResponseEntity<?> removalResponse(UserService.AdminRemovalResult result,
+                                              String action,
+                                              String successMessage) {
+        return switch (result) {
+            case DONE -> ResponseEntity.ok(successMessage);
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "NOT_FOUND", "message", "用户不存在"));
+            case LAST_ADMIN -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "LAST_ADMIN_PROTECTED",
+                            "message", "系统必须保留至少一个可登录管理员，" + action + "操作已被拒绝"));
+            case INVALID_INPUT -> ResponseEntity.badRequest()
+                    .body(Map.of("error", "INVALID_INPUT", "message", "封禁时间格式不正确"));
+        };
     }
 
     @PutMapping("/{userId}/unban")
@@ -234,20 +346,62 @@ public class UserController {
         return success ? ResponseEntity.ok("用户解封操作完成") : ResponseEntity.badRequest().body("解封操作失败");
     }
 
+    /**
+     * Milestone 6 + review follow-up: the old behaviour (reset to the fixed
+     * password {@code 000000} and echo it) is gone. The administrator supplies a
+     * <em>real</em> temporary password:
+     * <ul>
+     *   <li>it must satisfy the strength policy (administrator accounts use the
+     *       12-character rule, user accounts the shorter user rule);</li>
+     *   <li>it is stored with {@code password_reset_required = 1} and an expiry
+     *       ({@code lifecomposer.admin.temp-password-ttl-minutes}), so the account
+     *       must replace it before doing anything else and cannot log in after the
+     *       deadline;</li>
+     *   <li>the credential version is bumped, which immediately invalidates every
+     *       session opened with the previous password;</li>
+     *   <li>the response and the audit line never contain the password.</li>
+     * </ul>
+     */
     @PostMapping("/admin/reset-password/{userId}")
-    public ResponseEntity<?> adminResetPassword(@PathVariable int userId, Authentication authentication) {
+    public ResponseEntity<?> adminResetPassword(@PathVariable int userId,
+                                                @RequestBody(required = false) Map<String, String> payload,
+                                                Authentication authentication) {
         if (isNotAdmin(authentication)) {
-            return ResponseEntity.status(403).body("权限不足");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "权限不足"));
         }
 
         User target = userService.getById(userId);
         if (target == null) {
-            return ResponseEntity.badRequest().body("用户不存在");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "用户不存在"));
         }
 
-        boolean success = userService.resetPassword(userId, "000000");
-        return success ? ResponseEntity.ok("密码重置成功，新密码为: 000000")
-                : ResponseEntity.badRequest().body("密码重置失败");
+        String newPassword = payload == null ? null : payload.get("newPassword");
+        boolean targetIsAdmin = target.getType() != null && target.getType() == UserType.ADMIN;
+        Optional<String> violation = targetIsAdmin
+                ? adminPasswordPolicy.violation(newPassword)
+                : adminPasswordPolicy.violationForUser(newPassword);
+        if (violation.isPresent()) {
+            LOG.warn("AUDIT event=admin_reset_password_rejected admin={} targetUserId={} reason=weak_password",
+                    authentication.getName(), userId);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "WEAK_PASSWORD", "message", violation.get()));
+        }
+
+        Timestamp expiresAt = userService.setTemporaryPassword(userId, newPassword);
+        if (expiresAt == null) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "RESET_FAILED", "message", "密码重置失败"));
+        }
+
+        LOG.info("AUDIT event=admin_reset_password admin={} targetUserId={} targetUsername={} "
+                        + "tempPassword=true expiresAt={} result=success",
+                authentication.getName(), userId, target.getUsername(), expiresAt.toInstant());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("message", "临时密码已下发，用户首次登录后必须立即修改");
+        body.put("passwordChangeRequired", true);
+        body.put("tempPasswordExpiresAt", expiresAt);
+        return ResponseEntity.ok(body);
     }
 
     private boolean isNotAdmin(Authentication authentication) {

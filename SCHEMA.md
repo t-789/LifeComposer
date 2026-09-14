@@ -60,7 +60,11 @@ CREATE TABLE IF NOT EXISTS users (
   ban_end_time TIMESTAMP NULL,
   avatar TEXT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  password_reset_required BOOLEAN NOT NULL DEFAULT 0,   -- v0.0.6：临时密码待修改
+  temp_password_expires_at TIMESTAMP NULL,              -- v0.0.6：临时密码有效期
+  password_changed_at TIMESTAMP NULL,                   -- v0.0.6：最近一次设置密码时间
+  credential_version INTEGER NOT NULL DEFAULT 1         -- v0.0.6：会话失效用的密码代号
 );
 ```
 
@@ -569,6 +573,47 @@ WHERE request_count < ?;
 
 ---
 
+## 索引补充（v0.0.6）
+
+Milestone 7 管理控制台带来按用户/状态/类型/日期的分页筛选，因此在既有索引（`idx_ca_user`、`idx_ca_type`、`idx_rag_related`、`idx_rag_embedding_status`、`idx_chat_usage_date`）之外，`DatabaseInitializer.createAdminConsoleIndexes()` 在每次启动时用 `CREATE INDEX IF NOT EXISTS` 幂等补齐以下索引：
+
+| 索引 | 表（列） | 服务的控制台视图 |
+|------|----------|------------------|
+| `idx_chat_messages_user_time` | `chat_messages(user_id, create_time)` | AI 对话记录（按用户+时间） |
+| `idx_chat_messages_time` | `chat_messages(create_time)` | AI 对话记录（日期筛选） |
+| `idx_chat_messages_role_id` | `chat_messages(role, id)` | AI 对话记录（按 role 筛选并倒序分页，避免临时排序） |
+| `idx_planning_user_created` | `planning_history(user_id, created_at)` | AI 规划记录（按用户+时间） |
+| `idx_planning_created` | `planning_history(created_at)` | AI 规划记录（日期筛选） |
+| `idx_planning_status` | `planning_history(status)` | AI 规划记录（FAILED 排查） |
+| `idx_feedback_time` | `feedback(create_time)` | 反馈与错误（日期筛选） |
+| `idx_feedback_resolved_type` | `feedback(resolved, type)` | 反馈与错误（未解决系统错误） |
+| `idx_chat_usage_user` | `chat_usage_daily(user_id)` | 聊天用量（按用户） |
+| `idx_users_type` | `users(type)` | 用户与额度 / 总览（管理员计数） |
+| `idx_credit_rules_college` | `college_credit_rules(college, credit_type)` | 加分规则 |
+| `idx_credit_activities_verified` | `credit_activities(verified)` | 加分记录（审核状态） |
+| `idx_resources_type_quality` | `resources(type, data_quality)` | 资源库 |
+| `idx_capability_reference_section` | `capability_reference(section)` | 能力字典 |
+
+> **无表结构变更**：v0.0.6（Milestone 6/7）没有新增表或列，仅补充索引与管理员初始化行为（`LIFECOMPOSER_INITIAL_ADMIN_PASSWORD`）。
+>
+> **EXPLAIN QUERY PLAN 复核（`scripts/explain-admin-queries.py`，18 个典型控制台查询）**：15 个走索引（含 covering index 与自动唯一索引），3 个为预期内全表扫描 —— `chat_messages` 按日期范围（时间戳归一化 CASE 表达式不可索引）、`users` 用户名 `LIKE '%…%'`（前置通配符）、`capability_tags` 按 category（10 行小表，走主键索引扫描）。
+>
+> **时间戳存储不一致（已知）**：`users.created_at` / `chat_messages.create_time` 由 JDBC `Timestamp` 写入，实际为 INTEGER epoch 毫秒；`planning_history.created_at` / `user_profiles.created_at` 由 `datetime('now')` 写入，为 TEXT。管理控制台的读查询用 `CASE WHEN typeof(col) IN ('integer','real') THEN strftime(...) ELSE col END` 归一化两种形式，因此按日期过滤的谓词不可用索引（每页仍会先命中 `user_id`/`status` 等索引列）。后续如需统一，应新增迁移一次性归一化历史数据。
+
+---
+
+### v0.0.6 审查整改：`users` 新增 4 列
+
+| 字段 | 说明 |
+|------|------|
+| `password_reset_required` | 1 = 当前是管理员下发的临时密码，用户登录后必须先改密；改密成功置 0 |
+| `temp_password_expires_at` | 临时密码失效时刻（JDBC `Timestamp`，实际存储为 epoch 毫秒）；过期即拒绝登录，改密成功置 NULL |
+| `password_changed_at` | 最近一次设置密码的时间（注册/重置/自助修改都会更新） |
+| `credential_version` | 密码代号，每次密码变更 +1。会话登录时记录该值，之后每次请求比对；不一致说明密码已在别处变更，服务端立即销毁该会话（无需 SessionRegistry） |
+
+> 迁移：`UserRepository.migrateUserSchema()` 用 `PRAGMA table_info` 逐列检测并 `ALTER TABLE ADD COLUMN` 幂等补齐，`UserSchemaMigrationTest` 用真实旧版建表语句验证升级路径与默认值。
+> `spring.datasource.url` 增加 `transaction_mode=immediate`，使 `@Transactional` 写事务（管理员保护、密码变更）在事务开始即取得 SQLite 写锁，避免“先查数量再更新”的并发窗口。
+
 ## 附录：SQLite 兼容性说明
 
 - `BOOLEAN` 用 `INTEGER`（0/1）存储
@@ -581,6 +626,6 @@ WHERE request_count < ?;
 ---
 
 *设计日期：2026-06-11*
-*更新日期：2026-09-05（第二轮：移除 goals 表并入 user_profiles.goals；resources 改双键 AUTOINCREMENT id + 唯一业务 id resource_id；前轮：college_credit_rules 加 levels_json/notes，user_profiles 加 available_time/goals，新增 resources / rag_chunks / capability_tags / capability_reference）*
+*更新日期：2026-09-14（v0.0.6：Milestone 6/7，无表结构变更，补充管理控制台索引与时间戳归一化说明。2026-09-05 第二轮：移除 goals 表并入 user_profiles.goals；resources 改双键 AUTOINCREMENT id + 唯一业务 id resource_id；前轮：college_credit_rules 加 levels_json/notes，user_profiles 加 available_time/goals，新增 resources / rag_chunks / capability_tags / capability_reference）*
 *参考文件：信通院创新实践活动加分办法_2023级起适用.pdf；样例/SAMPLES-README.md（数据交付包 2026-09-05 快照）*
 *实际代码：LifeComposer/src/main/java/org/example/lifecomposer/Repository/*.java*

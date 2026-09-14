@@ -104,6 +104,16 @@ public class GlobalExceptionHandler {
             return ResponseEntity.badRequest().body("Missing servlet request parameter.");
         }
 
+        // Review follow-up: a malformed or missing JSON body is a client error.
+        // Without this branch it fell through to the generic handler, which
+        // answered 500 and recorded a bogus system error in the feedback table.
+        if (ex instanceof org.springframework.http.converter.HttpMessageNotReadableException) {
+            logger.warn("Malformed request body: {}", request.getDescription(false));
+            // Plain text keeps this handler's uniform body contract; the frontend
+            // surfaces the message as-is and never injects it as markup.
+            return ResponseEntity.badRequest().body("请求体缺失或格式不正确");
+        }
+
         if (ex instanceof org.springframework.security.authentication.InternalAuthenticationServiceException) {
             logger.warn("InternalAuthenticationServiceException: {}", request.getDescription(false));
             return ResponseEntity.status(500).body("Internal Server Error");

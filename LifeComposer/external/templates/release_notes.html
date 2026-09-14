@@ -180,6 +180,126 @@
       ============================================================
     -->
 
+    <!-- ========== v0.0.6 ========== -->
+    <div class="container">
+        <h1>v0.0.6 — Milestone 6/7：管理员初始化安全整改与数据库调试控制台</h1>
+        <p><em>2026 年 9 月 14 日</em></p>
+
+        <div class="stats-grid">
+            <div class="stat-item"><span class="stat-num">1</span><span class="stat-label">初始密码环境变量</span></div>
+            <div class="stat-item"><span class="stat-num">12</span><span class="stat-label">管理员密码最小长度</span></div>
+            <div class="stat-item"><span class="stat-num">23</span><span class="stat-label">只读管理 API</span></div>
+            <div class="stat-item"><span class="stat-num">13</span><span class="stat-label">控制台视图</span></div>
+            <div class="stat-item"><span class="stat-num">200</span><span class="stat-label">分页上限</span></div>
+            <div class="stat-item"><span class="stat-num">311</span><span class="stat-label">自动化测试</span></div>
+        </div>
+
+        <h2>破坏性变更：移除固定的 admin/admin</h2>
+        <ul>
+            <li>启动时不再自动创建 <code>admin</code> / <code>admin</code>。数据库中没有任何管理员时，必须通过环境变量
+                <code>LIFECOMPOSER_INITIAL_ADMIN_PASSWORD</code> 提供初始密码</li>
+            <li>变量缺失、为空或不满足强度要求时应用 <strong>fail-fast</strong> 并拒绝启动，错误信息只包含变量名，绝不包含密码值</li>
+            <li>已有管理员的数据库忽略该变量，且<strong>绝不覆盖</strong>任何现有密码</li>
+            <li>独立数据导入 CLI（<code>import.sh</code>）继续跳过管理员初始化，不需要该变量</li>
+            <li>升级提示：从 v0.0.5 及更早版本升级时，若库中仍是历史默认口令，必须在 <code>.env</code> 中补上
+                <code>LIFECOMPOSER_INITIAL_ADMIN_PASSWORD</code> 才能启动</li>
+        </ul>
+
+        <h2>密码强度与存量弱口令轮换</h2>
+        <ul>
+            <li>新增 <code>AdminPasswordPolicy</code>：至少 12 个字符（<code>lifecomposer.admin.min-password-length</code>）、
+                不超过 72 字符、不含空白字符，拒绝 <code>admin</code> / <code>000000</code> / <code>testuser</code>
+                等已知弱密码与单字符重复</li>
+            <li>只针对可明确识别的历史默认账户：若 <code>admin</code> 的 BCrypt 哈希仍匹配 <code>admin</code>，
+                启动时强制要求提供合格新密码并立即轮换，否则拒绝启动；轮换只记录
+                <code>AUDIT event=admin_password_rotated</code> 与用户名</li>
+            <li>撤销或封禁<strong>最后一个可登录管理员</strong>会被拒绝，避免后台失去可登录管理员</li>
+            <li><code>.env.example</code>、<code>run.sh</code> 与文档只写变量名和占位符，不写任何真实密码；
+                <code>run.sh</code> 只透传变量并在缺失时给出提示</li>
+        </ul>
+
+        <h2>管理员重置密码整改</h2>
+        <ul>
+            <li><code>POST /api/users/admin/reset-password/{userId}</code> 不再重置为固定 <code>000000</code>，
+                改为接收一次性临时密码 <code>{"newPassword":"..."}</code>，执行与初始化一致的强度校验</li>
+            <li>响应只返回成功状态，<strong>不回显明文密码</strong>；管理页面改用密码输入框 + 二次确认，
+                提交后立即清空 DOM 中的输入值，密码不进入 URL、日志或浏览器持久状态</li>
+            <li>操作要求 <code>ROLE_ADMIN</code> + 有效 CSRF token，并写入不含密码的审计日志
+                <code>AUDIT event=admin_reset_password</code></li>
+        </ul>
+
+        <h2>数据库管理与调试控制台：23 个只读管理 API</h2>
+        <ul>
+            <li>新增 <code>/api/admin/**</code>，全部为只读 <code>GET</code> 且仅 <code>ROLE_ADMIN</code> 可访问；
+                覆盖 12 张业务表与总览：<code>dashboard</code>、<code>users</code>、<code>user-profiles</code>、
+                <code>planning-history</code>、<code>chat-messages</code>、<code>feedback</code>、
+                <code>college-credit-rules</code>、<code>credit-activities</code>、<code>resources</code>、
+                <code>rag-chunks</code>、<code>capability-tags</code>、<code>capability-reference</code>、<code>chat-usage</code>，
+                关键数据集附固定主键详情接口</li>
+            <li>统一分页信封 <code>{items, page, pageSize, total, totalPages}</code>；默认每页 50、<strong>上限 200</strong>，
+                服务端分页不整表加载；排序字段来自每个数据集的独立白名单，用户输入不进入 SQL 文本</li>
+            <li>筛选参数做长度/类型/枚举/日期校验，未在白名单内的参数一律 400
+                <code>UNKNOWN_PARAMETER</code>；<code>LIKE</code> 关键词转义 <code>%</code>/<code>_</code></li>
+            <li>允许字段清单投影：永不返回 <code>password_hash</code>、原始 <code>embedding_json</code> 向量、
+                <code>certificate_ref</code> 路径（只给 <code>hasCertificate</code>）；画像列表掩码学号且不含偏好 JSON；
+                反馈列表不含堆栈，详情中的堆栈按 <code>console-diagnostic-length</code> 截断</li>
+            <li>每管理员每分钟最多 240 次查询（<code>lifecomposer.admin.console-queries-per-minute</code>），
+                超限 429 <code>ADMIN_RATE_LIMIT</code>；查询使用 10s JDBC statement timeout；
+                数据库异常统一返回 <code>ADMIN_QUERY_FAILED</code>，不泄露 SQL/表结构/堆栈</li>
+            <li>新增 13 个控制台索引（幂等 <code>CREATE INDEX IF NOT EXISTS</code>），并统一 epoch 毫秒与文本两种时间戳的读取/筛选</li>
+        </ul>
+
+        <h2>控制台前端：统一布局与 XSS 安全</h2>
+        <ul>
+            <li><code>/admin</code> 扩展为 13 个视图的紧凑运维控制台：总览、用户与额度、用户画像、AI 规划、AI 对话、
+                反馈与错误、加分规则、加分记录、资源库、RAG 切片、能力标签、能力字典、聊天用量</li>
+            <li>全部页面共用 <code>external/static/admin.css</code> + <code>external/static/admin.js</code>：
+                同一套导航、筛选栏、分页器、详情抽屉与加载/空数据/错误状态，页面模板只声明 <code>data-admin-view</code></li>
+            <li><strong>所有数据库文本通过 <code>textContent</code>/<code>createTextNode</code> 渲染</strong>，
+                用户名、反馈、对话、URL、JSON 中的恶意 HTML 只显示为文本；链接仅允许 <code>http</code>/<code>https</code>
+                并带 <code>rel="noopener noreferrer"</code>；<code>admin.js</code> 不含 innerHTML/document.write/eval 等注入面</li>
+            <li>用户管理页提供“重置今日聊天额度”，并把固定 <code>000000</code> 的重置 UI 替换为临时密码对话框（含二次确认）</li>
+        </ul>
+
+        <h2>审查整改（P1/P2）</h2>
+        <ul>
+            <li><strong>真正的临时密码</strong>：管理员下发的密码现在带状态与有效期
+                （<code>users.password_reset_required</code> / <code>temp_password_expires_at</code>）。
+                用户下次登录后只能访问修改密码相关端点，其他请求返回 401 <code>PASSWORD_CHANGE_REQUIRED</code>；
+                完成修改后临时密码立即失效，过期未修改则连登录都被拒绝（403 <code>TEMP_PASSWORD_EXPIRED</code>）</li>
+            <li><strong>密码变更即销毁旧会话</strong>：新增 <code>users.credential_version</code>，
+                登录时写入会话、之后每次请求比对（<code>SessionCredentialGuardFilter</code>，挂在 Spring Security 过滤器链上）。
+                管理员重置密码后，该账户所有旧会话在下一次请求即被销毁（401 <code>SESSION_EXPIRED</code>）；
+                发起修改的会话会被重新盖章，因此“改密码的人不掉线，其他设备全下线”</li>
+            <li><strong>最后管理员保护并发安全</strong>：把“至少保留一个可登录管理员”的条件写进
+                <code>UPDATE ... WHERE</code> 子句（<code>revokeAdminIfNotLast</code> /
+                <code>banIfNotLastLoginableAdmin</code>，只作用于单行），并在 <code>@Transactional</code> 下执行；
+                连接串新增 <code>transaction_mode=immediate</code>，事务开始即取得 SQLite 写锁，
+                因此并发撤销/封禁不可能同时通过检查。该情况返回 409 <code>LAST_ADMIN_PROTECTED</code>
+                （此前被错误地报成“用户不存在”的 400）</li>
+            <li><strong>自助修改密码</strong>：新增 <code>POST /api/users/password</code> 与
+                <code>/front/change-password</code> 页面；登录接口改为返回 JSON 并带上
+                <code>passwordChangeRequired</code> / <code>tempPasswordExpiresAt</code>，
+                登录页据此跳转</li>
+            <li><strong>信任模型确认</strong>：管理员为完全可信的调试/运维角色——绝不返回密码哈希、原始向量、
+                证书路径与会话信息；画像列表掩码学号（防肩窥），详情返回完整学号与偏好 JSON 供排查。
+                该约定同时写在 <code>AdminController</code> 类注释与 <code>admin.js</code> 文件头</li>
+            <li><strong>健壮性</strong>：缺失/损坏的 JSON 请求体由 500 改为 400，不再污染系统错误反馈表</li>
+        </ul>
+
+        <h2>审计与测试</h2>
+        <ul>
+            <li>成功查询记录 <code>AUDIT event=admin_query</code>（admin/dataset/filters/total/returned/elapsedMs），
+                被拒查询记录 <code>AUDIT event=admin_query_rejected</code>（admin/uri/reason）；
+                只记录身份与动作，不记录被查看的正文内容</li>
+            <li>自动化测试 <strong>311 个，0 失败</strong>；新增密码策略、启动 fail-fast（空库缺变量/弱密码/存量 admin/admin 轮换/
+                已有管理员不被覆盖）、临时密码重置（弱密码、无 CSRF、非管理员、不回显、审计不含密码）、
+                管理 API 权限（未登录/普通用户/管理员 × 页面与接口）、分页与非法参数、敏感字段不泄露、
+                存储型 XSS 与前端注入面静态扫描、管理员限流、审计日志、管理端内网限制、控制台只读不改数据、临时密码全生命周期（过期/强制修改/旧会话失效/多设备）、并发撤销与封禁、旧库 schema 迁移等测试</li>
+            <li>原有 188 个测试（含 v0.0.4/v0.0.5 的导入 CLI、RAG、Agent tool-use、SSE、CSRF、聊天额度）全部保持通过</li>
+        </ul>
+    </div>
+
     <!-- ========== v0.0.5 ========== -->
     <div class="container">
         <h1>v0.0.5 — Milestone 5：应用安全加固与 AI 使用控制</h1>

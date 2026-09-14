@@ -3,23 +3,49 @@ package org.example.lifecomposer.Service;
 import org.example.lifecomposer.Repository.UserRepository;
 import org.example.lifecomposer.Entity.User;
 import org.example.lifecomposer.Entity.UserType;
+import org.example.lifecomposer.config.AdminSecurityProperties;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class UserService {
 
+    /**
+     * Outcome of an administrator-removal operation, so controllers can answer
+     * with a precise status instead of a generic 400 (review follow-up: the old
+     * "last administrator" rejection was reported as "user does not exist").
+     */
+    public enum AdminRemovalResult {
+        /** The state change was applied. */
+        DONE,
+        /** No such user. */
+        NOT_FOUND,
+        /** Refused: the system must keep at least one loginable administrator. */
+        LAST_ADMIN,
+        /** Refused: the ban duration expression was invalid. */
+        INVALID_INPUT
+    }
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AdminSecurityProperties adminSecurityProperties;
+    private final AdminPasswordPolicy passwordPolicy;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository,
+                       PasswordEncoder passwordEncoder,
+                       AdminSecurityProperties adminSecurityProperties,
+                       AdminPasswordPolicy passwordPolicy) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.adminSecurityProperties = adminSecurityProperties;
+        this.passwordPolicy = passwordPolicy;
     }
 
     public boolean register(String username, String rawPassword) {
@@ -56,6 +82,12 @@ public class UserService {
         return passwordEncoder.matches(rawPassword, user.getPasswordHash()) ? user : null;
     }
 
+    /** True when the stored temporary password has passed its deadline. */
+    public boolean isTemporaryPasswordExpired(User user) {
+        Timestamp expiresAt = user.getTempPasswordExpiresAt();
+        return expiresAt != null && expiresAt.before(Timestamp.from(Instant.now()));
+    }
+
     public User getByUsername(String username) {
         return userRepository.findByUsername(username);
     }
@@ -72,27 +104,113 @@ public class UserService {
         return userRepository.updateUserType(userId, UserType.ADMIN);
     }
 
-    public boolean revokeAdminPermission(int userId) {
-        return userRepository.updateUserType(userId, UserType.USER);
+    /**
+     * Milestone 6 guard (review follow-up: race-free).
+     *
+     * <p>The whole operation runs in one immediate write transaction, and the
+     * "keep at least one loginable administrator" condition is additionally part
+     * of the UPDATE statement itself, so two concurrent demotions can never both
+     * succeed (see {@code UserRepository#revokeAdminIfNotLast}).</p>
+     */
+    @Transactional
+    public AdminRemovalResult revokeAdminPermission(int userId) {
+        User target = userRepository.findById(userId);
+        if (target == null) {
+            return AdminRemovalResult.NOT_FOUND;
+        }
+        if (target.getType() == null || target.getType() != UserType.ADMIN) {
+            // Already a normal user: idempotent success, matching the old behaviour.
+            return AdminRemovalResult.DONE;
+        }
+        return userRepository.revokeAdminIfNotLast(userId) > 0
+                ? AdminRemovalResult.DONE
+                : AdminRemovalResult.LAST_ADMIN;
     }
 
-    public boolean banUser(int userId, String banTimeExpr) {
-        if ("0".equals(banTimeExpr)) {
-            return userRepository.updateBanStatus(userId, true, null);
+    /**
+     * Milestone 6 guard (review follow-up: race-free). The last loginable
+     * administrator cannot be banned; the guard is evaluated inside the UPDATE
+     * statement under an immediate write transaction.
+     */
+    @Transactional
+    public AdminRemovalResult banUser(int userId, String banTimeExpr) {
+        User target = userRepository.findById(userId);
+        if (target == null) {
+            return AdminRemovalResult.NOT_FOUND;
         }
-        long ms = parseBanTimeToMillis(banTimeExpr);
-        if (ms <= 0) {
-            return false;
+
+        Timestamp banEndTime = null;
+        if (!"0".equals(banTimeExpr)) {
+            long ms = parseBanTimeToMillis(banTimeExpr);
+            if (ms <= 0) {
+                return AdminRemovalResult.INVALID_INPUT;
+            }
+            banEndTime = new Timestamp(System.currentTimeMillis() + ms);
         }
-        return userRepository.updateBanStatus(userId, true, new Timestamp(System.currentTimeMillis() + ms));
+
+        return userRepository.banIfNotLastLoginableAdmin(userId, banEndTime) > 0
+                ? AdminRemovalResult.DONE
+                : AdminRemovalResult.LAST_ADMIN;
     }
 
     public boolean unbanUser(int userId) {
         return userRepository.updateBanStatus(userId, false, null);
     }
 
+    /** Plain password replacement (bootstrap rotation of the legacy default account). */
     public boolean resetPassword(int userId, String newPassword) {
         return userRepository.updateUserPassword(userId, passwordEncoder.encode(newPassword));
+    }
+
+    /**
+     * Review follow-up (P1/P2): installs a real temporary password — the account
+     * must replace it before using anything else, and it stops working once the
+     * configured TTL has passed. Every existing session of that user becomes
+     * stale because the credential version is bumped.
+     *
+     * @return the expiry moment, or null when the user does not exist.
+     */
+    @Transactional
+    public Timestamp setTemporaryPassword(int userId, String temporaryPassword) {
+        User target = userRepository.findById(userId);
+        if (target == null) {
+            return null;
+        }
+        Timestamp expiresAt = Timestamp.from(Instant.now().plus(
+                Duration.ofMinutes(Math.max(1, adminSecurityProperties.getTempPasswordTtlMinutes()))));
+        boolean updated = userRepository.updateUserPasswordAsTemporary(
+                userId, passwordEncoder.encode(temporaryPassword), expiresAt);
+        return updated ? expiresAt : null;
+    }
+
+    /**
+     * Self-service password replacement, used both for the forced first change
+     * after a temporary password and for an ordinary password change.
+     *
+     * @return null on success, otherwise a user-facing error message.
+     */
+    @Transactional
+    public String changeOwnPassword(int userId, String currentPassword, String newPassword,
+                                    boolean targetIsAdmin) {
+        User user = userRepository.findById(userId);
+        if (user == null) {
+            return "用户不存在";
+        }
+        if (currentPassword == null || !passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            return "当前密码不正确";
+        }
+        if (currentPassword.equals(newPassword)) {
+            return "新密码不能与当前密码相同";
+        }
+        Optional<String> violation = targetIsAdmin
+                ? passwordPolicy.violation(newPassword)
+                : passwordPolicy.violationForUser(newPassword);
+        if (violation.isPresent()) {
+            return violation.get();
+        }
+        return userRepository.updateUserPasswordAndClearReset(userId, passwordEncoder.encode(newPassword))
+                ? null
+                : "密码更新失败";
     }
 
     private long parseBanTimeToMillis(String timeStr) {

@@ -29,6 +29,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 public abstract class BaseControllerTest {
 
+    /** Strong-enough administrator password used by tests (never the legacy default). */
+    protected static final String ADMIN_PASSWORD = "AdminTestPassw0rd!2026";
+
     @Autowired
     protected WebApplicationContext context;
 
@@ -133,9 +136,11 @@ public abstract class BaseControllerTest {
 
 
     protected MockHttpSession loginAsAdmin() throws Exception {
+        // Milestone 6: tests must not write the removed legacy default password
+        // into the database — the startup guard rejects it on the next boot.
         jdbcTemplate.execute("UPDATE users SET password_hash = '" +
-                new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("admin") +
+                new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode(ADMIN_PASSWORD) +
                 "' WHERE username = 'admin'");
-        return loginUser("admin", "admin");
+        return loginUser("admin", ADMIN_PASSWORD);
     }
 }

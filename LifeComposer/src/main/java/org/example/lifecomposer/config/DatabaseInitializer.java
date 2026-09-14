@@ -18,11 +18,9 @@ import org.example.lifecomposer.Repository.RagChunkRepository;
 import org.example.lifecomposer.Repository.ResourceRepository;
 import org.example.lifecomposer.Repository.UserProfileRepository;
 import org.example.lifecomposer.Repository.UserRepository;
-import org.example.lifecomposer.Entity.User;
-import org.example.lifecomposer.Entity.UserType;
+import org.example.lifecomposer.Service.AdminBootstrapService;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -54,7 +52,7 @@ public class DatabaseInitializer {
     private final CapabilityReferenceRepository capabilityReferenceRepository;
     private final ChatUsageRepository chatUsageRepository;
     private final AppSecurityProperties securityProperties;
-    private final PasswordEncoder passwordEncoder;
+    private final AdminBootstrapService adminBootstrapService;
     private final boolean importMode;
 
     public DatabaseInitializer(JdbcTemplate jdbcTemplate,
@@ -71,7 +69,7 @@ public class DatabaseInitializer {
                                CapabilityReferenceRepository capabilityReferenceRepository,
                                ChatUsageRepository chatUsageRepository,
                                AppSecurityProperties securityProperties,
-                               PasswordEncoder passwordEncoder,
+                               AdminBootstrapService adminBootstrapService,
                                Environment environment) {
         this.jdbcTemplate = jdbcTemplate;
         this.userRepository = userRepository;
@@ -87,7 +85,7 @@ public class DatabaseInitializer {
         this.capabilityReferenceRepository = capabilityReferenceRepository;
         this.chatUsageRepository = chatUsageRepository;
         this.securityProperties = securityProperties;
-        this.passwordEncoder = passwordEncoder;
+        this.adminBootstrapService = adminBootstrapService;
         this.importMode = environment.getProperty("lifecomposer.import.mode", Boolean.class, false);
     }
 
@@ -116,9 +114,43 @@ public class DatabaseInitializer {
             LOG.info("Removed {} expired chat usage rows before {}", expiredUsageRows, usageCutoff);
         }
 
+        createAdminConsoleIndexes();
+
         migrateLegacyGoals();
 
-        createDefaultAdminIfMissing();
+        bootstrapAdministrator();
+    }
+
+    /**
+     * Milestone 7: indexes for the admin console filters. SQLite does not
+     * auto-index foreign-key columns and the console pages filter/sort on these
+     * predicates, so they are created once with {@code IF NOT EXISTS}
+     * (idempotent on every startup and on already-populated databases).
+     */
+    private void createAdminConsoleIndexes() {
+        for (String ddl : List.of(
+                "CREATE INDEX IF NOT EXISTS idx_chat_messages_user_time ON chat_messages(user_id, create_time)",
+                "CREATE INDEX IF NOT EXISTS idx_chat_messages_time ON chat_messages(create_time)",
+                "CREATE INDEX IF NOT EXISTS idx_chat_messages_role_id ON chat_messages(role, id)",
+                "CREATE INDEX IF NOT EXISTS idx_planning_user_created ON planning_history(user_id, created_at)",
+                "CREATE INDEX IF NOT EXISTS idx_planning_created ON planning_history(created_at)",
+                "CREATE INDEX IF NOT EXISTS idx_planning_status ON planning_history(status)",
+                "CREATE INDEX IF NOT EXISTS idx_feedback_time ON feedback(create_time)",
+                "CREATE INDEX IF NOT EXISTS idx_feedback_resolved_type ON feedback(resolved, type)",
+                "CREATE INDEX IF NOT EXISTS idx_chat_usage_user ON chat_usage_daily(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_users_type ON users(type)",
+                "CREATE INDEX IF NOT EXISTS idx_credit_rules_college ON college_credit_rules(college, credit_type)",
+                "CREATE INDEX IF NOT EXISTS idx_credit_activities_verified ON credit_activities(verified)",
+                "CREATE INDEX IF NOT EXISTS idx_resources_type_quality ON resources(type, data_quality)",
+                "CREATE INDEX IF NOT EXISTS idx_capability_reference_section ON capability_reference(section)"
+        )) {
+            try {
+                jdbcTemplate.execute(ddl);
+            } catch (RuntimeException e) {
+                // Never let an index hint block startup (e.g. missing legacy table).
+                LOG.warn("Admin console index creation skipped: {}", e.getMessage());
+            }
+        }
     }
 
     /**
@@ -226,21 +258,18 @@ public class DatabaseInitializer {
         return count != null && count > 0;
     }
 
-    private void createDefaultAdminIfMissing() {
+    /**
+     * Milestone 6: the historical fixed {@code admin/admin} bootstrap is gone.
+     * The initial password must be supplied through
+     * {@code LIFECOMPOSER_INITIAL_ADMIN_PASSWORD}; a missing or weak value makes
+     * startup fail fast (see {@link AdminBootstrapService}). The standalone
+     * import CLI never needs an administrator and therefore skips this step.
+     */
+    private void bootstrapAdministrator() {
         if (importMode) {
-            LOG.info("Import mode active: skipping default admin bootstrap");
+            LOG.info("Import mode active: skipping administrator bootstrap");
             return;
         }
-        if (userRepository.countAdminUsers() > 0) {
-            return;
-        }
-
-        User admin = new User();
-        admin.setUsername("admin");
-        admin.setPasswordHash(passwordEncoder.encode("admin"));
-        admin.setType(UserType.ADMIN);
-        admin.setBanned(false);
-
-        userRepository.insertUser(admin);
+        adminBootstrapService.bootstrap();
     }
 }

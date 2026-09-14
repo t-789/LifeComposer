@@ -37,8 +37,9 @@
 - **Embedding**：本地 Ollama `quentinz/bge-small-zh-v1.5:f16`，固定 `POST /v1/embeddings`，向量存 SQLite JSON
 - **生成式 LLM**：v0.0.4 起默认统一切换 DeepSeek `deepseek-flash`；`/api/chat/*` 不使用 fallback
 - **Agent**：多轮 tool-use（白名单只读工具）+ SSE 流式过程展示，v0.0.4 已实现
-- **安全**：v0.0.5 起 CSRF 同步令牌、Session Cookie 加固、注册/登录限速；聊天 5/分钟 + 100/天（Asia/Shanghai）与 `max_tokens=1024`
-- **前端**：待定（App / Web）
+- **安全**：v0.0.5 起 CSRF 同步令牌、Session Cookie 加固、注册/登录限速；聊天 5/分钟 + 100/天（Asia/Shanghai）与 `max_tokens=1024`。v0.0.6 起移除固定 `admin/admin`，初始管理员密码只能来自 `LIFECOMPOSER_INITIAL_ADMIN_PASSWORD`（缺失/弱密码 fail-fast）；管理员下发带状态与有效期的临时密码，用户首次登录必须改密，密码变更即销毁该账户的旧会话（`credential_version` 守卫）；最后管理员保护使用原子 SQL 与立即写事务
+- **运维控制台**：v0.0.6 新增 `/api/admin/**` 只读管理 API（12 张表 + 总览，服务端分页/白名单筛选排序/限流/审计）与 `/admin/**` 统一布局控制台（XSS 安全渲染）
+- **前端**：待定（App / Web）；管理端控制台（v0.0.6）已就绪
 
 ## 进度规划
 
@@ -49,6 +50,7 @@
 | v0.0.3 | 2026-09-05 | 成长数据底座 6 表 + API ✅ |
 | v0.0.4 | 2026-09-13 | 导入 CLI + Ollama embedding/RAG + Agent tool-use + SSE + deepseek-flash ✅ |
 | v0.0.5 | 2026-09-13 | Milestone 5 安全加固：CSRF、Session、注册/登录限速、聊天分钟/日额度、管理员重置、审计日志 ✅ |
+| v0.0.6 | 2026-09-14 | Milestone 6 管理员初始化与密码安全整改 + Milestone 7 数据库管理与调试控制台（`/api/admin/**` 只读 API + `/admin/**` 统一布局控制台）；审查整改：真正的临时密码（状态/有效期/强制修改/旧会话失效）、并发安全的最后管理员保护、管理员信任模型确认 ✅ |
 | 后续 | 持续 | 适配算法、问卷/访谈、系统测试、反馈优化、互勉提醒 |
 
 ## 与当前代码的关系
@@ -61,6 +63,6 @@
 | 实现 `college_credit_rules` 和 `credit_activities` 表 | ✅ v0.0.3 建表 + API；v0.0.4 导入 346 条规则 |
 | 实现 `planning_history` 和 `goals` 表 | ✅ goals 已并入 `user_profiles.goals`；planning_history 保持 |
 | 接入 DeepSeek API，实现 Agent 问答 | ✅ v0.0.4 多轮 tool-use + SSE；生成用途切 `deepseek-flash` |
-| 前端开发（使用当前 external/templates/ 或全新框架） | ⏳ 本轮仅改 `chat_test.html` 验证 SSE 技术可行性 |
+| 前端开发（使用当前 external/templates/ 或全新框架） | ⏳ 用户端待定；管理端 `external/templates/` + `external/static/admin.js` 运维控制台已就绪（v0.0.6） |
 
 > **用户调研关键发现与开发重心**（8月主体开发依据）：详见 [SURVEY_FINDINGS.md](./SURVEY_FINDINGS.md)
