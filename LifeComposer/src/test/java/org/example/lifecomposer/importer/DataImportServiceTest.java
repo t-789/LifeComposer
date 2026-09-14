@@ -65,9 +65,9 @@ class DataImportServiceTest {
 
         EmbeddingClient embeddingClient = mock(EmbeddingClient.class);
         when(embeddingClient.isEnabled()).thenReturn(true);
-        when(embeddingClient.getModel()).thenReturn("nomic-embed-text-v2-moe:latest");
+        when(embeddingClient.getModel()).thenReturn("quentinz/bge-small-zh-v1.5:f16");
         when(embeddingClient.embed(anyString()))
-                .thenReturn(new EmbeddingResult(List.of(0.1, 0.2), "nomic-embed-text-v2-moe:latest", 2));
+                .thenReturn(new EmbeddingResult(List.of(0.1, 0.2), "quentinz/bge-small-zh-v1.5:f16", 2));
 
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         when(passwordEncoder.encode(anyString())).thenReturn("encoded");
@@ -98,7 +98,7 @@ class DataImportServiceTest {
 
         verify(ragChunkRepository).upsert(any());
         verify(ragChunkRepository).updateEmbedding(
-                eq("rag_001"), anyString(), eq("nomic-embed-text-v2-moe:latest"),
+                eq("rag_001"), anyString(), eq("quentinz/bge-small-zh-v1.5:f16"),
                 eq(2), eq("SUCCESS"), isNull(), anyString());
     }
 

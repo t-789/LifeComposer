@@ -290,7 +290,7 @@
         <h2>配置：统一切换 deepseek-flash</h2>
         <ul>
             <li><code>qa</code> / <code>planning</code> / <code>profile</code> / <code>sql</code> / <code>chat</code> 默认配置统一为 provider=<code>deepseek</code>、baseUrl=<code>https://api.deepseek.com/v1</code>、model=<code>deepseek-flash</code>，API key 只通过环境变量名 <code>DEEPSEEK_API_KEY</code> 读取</li>
-            <li>Embedding 模型保持本地 Ollama <code>nomic-embed-text-v2-moe:latest</code>，只负责向量生成，不替代生成式模型</li>
+            <li>Embedding 模型使用本地 Ollama <code>quentinz/bge-small-zh-v1.5:f16</code>，只负责向量生成，不替代生成式模型</li>
             <li>同步更新 <code>application.properties</code>、测试配置、<code>.env.example</code>、<code>run.sh</code>、<code>API.md</code>、<code>SCHEMA.md</code>、<code>AGENTS.md</code></li>
         </ul>
 

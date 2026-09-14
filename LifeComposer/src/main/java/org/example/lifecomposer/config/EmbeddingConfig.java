@@ -23,7 +23,7 @@ public class EmbeddingConfig {
     private String baseUrl = "http://localhost:11434/v1";
 
     /** Ollama embedding model. */
-    private String model = "nomic-embed-text-v2-moe:latest";
+    private String model = "quentinz/bge-small-zh-v1.5:f16";
 
     private int timeoutMillis = 30000;
 

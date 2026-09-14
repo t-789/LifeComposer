@@ -34,7 +34,7 @@
 
 - **后端**：Spring Boot 4.0.5 + SQLite + JdbcTemplate ✅ 已搭建
 - **LLM 接入**：OpenAI 兼容协议（OkHttp）✅ 已支持多 provider 切换
-- **Embedding**：本地 Ollama `nomic-embed-text-v2-moe:latest`，固定 `POST /v1/embeddings`，向量存 SQLite JSON
+- **Embedding**：本地 Ollama `quentinz/bge-small-zh-v1.5:f16`，固定 `POST /v1/embeddings`，向量存 SQLite JSON
 - **生成式 LLM**：v0.0.4 起默认统一切换 DeepSeek `deepseek-flash`；`/api/chat/*` 不使用 fallback
 - **Agent**：多轮 tool-use（白名单只读工具）+ SSE 流式过程展示，v0.0.4 已实现
 - **安全**：v0.0.5 起 CSRF 同步令牌、Session Cookie 加固、注册/登录限速；聊天 5/分钟 + 100/天（Asia/Shanghai）与 `max_tokens=1024`

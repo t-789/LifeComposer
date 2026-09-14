@@ -440,7 +440,7 @@ CREATE INDEX idx_rag_embedding_status ON rag_chunks(embedding_status);
 | `related_resource_id` | 否 | 逻辑关联 `resources.resource_id`（业务 id）；样例中 8/28 条不关联任何资源（如学院规则概览），允许 NULL | 'competition_001' |
 | `created_at` | 否 | 切片生成日期 | '2026-06-06' |
 | `embedding_json` | 否 | 向量 JSON 数组；NULL 表示尚未生成，不参与检索 | '[0.12,-0.03,...]' |
-| `embedding_model` | 否 | 生成向量的模型 | 'nomic-embed-text-v2-moe:latest' |
+| `embedding_model` | 否 | 生成向量的模型 | 'quentinz/bge-small-zh-v1.5:f16' |
 | `embedding_dimensions` | 否 | 向量维度（从 embeddings 响应数组长度获取，不硬编码） | 768 |
 | `embedding_status` | 否 | PENDING / SUCCESS / FAILED / SKIPPED | 'SUCCESS' |
 | `embedding_error` | 否 | 失败原因（截断，不含密钥） | 'HTTP 500 ...' |
