@@ -168,88 +168,90 @@ public class DatabaseInitializer {
         if (!tableExists("goals")) {
             return;
         }
-        try {
-            Map<Long, List<String>> titlesByUser = new LinkedHashMap<>();
-            jdbcTemplate.query("""
-                            SELECT user_id, title
-                            FROM goals
-                            WHERE status != 'ARCHIVED'
-                              AND EXISTS (SELECT 1 FROM users WHERE users.id = goals.user_id)
-                            ORDER BY user_id, id
-                            """,
-                    rs -> {
-                        String title = rs.getString("title");
-                        if (title != null && !title.isBlank()) {
-                            titlesByUser
-                                    .computeIfAbsent(rs.getLong("user_id"), k -> new ArrayList<>())
-                                    .add(title.trim());
-                        }
-                    });
-            for (Map.Entry<Long, List<String>> entry : titlesByUser.entrySet()) {
-                mergeLegacyGoalsIntoProfile(entry.getKey(), entry.getValue());
-            }
-            jdbcTemplate.execute("DROP TABLE goals");
-            LOG.info("Legacy goals table migrated into user_profiles.goals and dropped");
-        } catch (RuntimeException e) {
-            LOG.warn("Legacy goals migration failed and will be retried on next startup", e);
-        }
+        LOG.error("Legacy goals still exists. Please check.");
+        throw new RuntimeException("Unexpected table 'goals'");
+//        try {
+//            Map<Long, List<String>> titlesByUser = new LinkedHashMap<>();
+//            jdbcTemplate.query("""
+//                            SELECT user_id, title
+//                            FROM goals
+//                            WHERE status != 'ARCHIVED'
+//                              AND EXISTS (SELECT 1 FROM users WHERE users.id = goals.user_id)
+//                            ORDER BY user_id, id
+//                            """,
+//                    rs -> {
+//                        String title = rs.getString("title");
+//                        if (title != null && !title.isBlank()) {
+//                            titlesByUser
+//                                    .computeIfAbsent(rs.getLong("user_id"), k -> new ArrayList<>())
+//                                    .add(title.trim());
+//                        }
+//                    });
+//            for (Map.Entry<Long, List<String>> entry : titlesByUser.entrySet()) {
+//                mergeLegacyGoalsIntoProfile(entry.getKey(), entry.getValue());
+//            }
+//            jdbcTemplate.execute("DROP TABLE goals");
+//            LOG.info("Legacy goals table migrated into user_profiles.goals and dropped");
+//        } catch (RuntimeException e) {
+//            LOG.warn("Legacy goals migration failed and will be retried on next startup", e);
+//        }
     }
 
-    private void mergeLegacyGoalsIntoProfile(Long userId, List<String> legacyTitles) {
-        List<String> existingColumn = jdbcTemplate.query(
-                "SELECT goals FROM user_profiles WHERE user_id = ?",
-                (rs, rowNum) -> rs.getString("goals"), userId);
-        boolean profileExists = !existingColumn.isEmpty();
-        String existingJson = profileExists ? existingColumn.get(0) : null;
+//    private void mergeLegacyGoalsIntoProfile(Long userId, List<String> legacyTitles) {
+//        List<String> existingColumn = jdbcTemplate.query(
+//                "SELECT goals FROM user_profiles WHERE user_id = ?",
+//                (rs, rowNum) -> rs.getString("goals"), userId);
+//        boolean profileExists = !existingColumn.isEmpty();
+//        String existingJson = profileExists ? existingColumn.get(0) : null;
+//
+//        LinkedHashSet<String> merged = new LinkedHashSet<>();
+//        merged.addAll(parseGoalsJson(existingJson));
+//        merged.addAll(legacyTitles);
+//
+//        String goalsJson = toGoalsJson(merged);
+//        if (profileExists) {
+//            jdbcTemplate.update(
+//                    "UPDATE user_profiles SET goals = ?, updated_at = datetime('now') WHERE user_id = ?",
+//                    goalsJson, userId);
+//        } else {
+//            jdbcTemplate.update("""
+//                            INSERT INTO user_profiles (user_id, goals, created_at, updated_at)
+//                            VALUES (?, ?, datetime('now'), datetime('now'))
+//                            """,
+//                    userId, goalsJson);
+//        }
+//    }
 
-        LinkedHashSet<String> merged = new LinkedHashSet<>();
-        merged.addAll(parseGoalsJson(existingJson));
-        merged.addAll(legacyTitles);
-
-        String goalsJson = toGoalsJson(merged);
-        if (profileExists) {
-            jdbcTemplate.update(
-                    "UPDATE user_profiles SET goals = ?, updated_at = datetime('now') WHERE user_id = ?",
-                    goalsJson, userId);
-        } else {
-            jdbcTemplate.update("""
-                            INSERT INTO user_profiles (user_id, goals, created_at, updated_at)
-                            VALUES (?, ?, datetime('now'), datetime('now'))
-                            """,
-                    userId, goalsJson);
-        }
-    }
-
-    private List<String> parseGoalsJson(String goalsJson) {
-        if (goalsJson == null || goalsJson.isBlank()) {
-            return List.of();
-        }
-        try {
-            JsonNode node = MAPPER.readTree(goalsJson);
-            if (node != null && node.isArray()) {
-                List<String> titles = new ArrayList<>();
-                for (JsonNode item : node) {
-                    if (item != null && item.isTextual() && !item.asText().isBlank()) {
-                        titles.add(item.asText().trim());
-                    }
-                }
-                return titles;
-            }
-            // Not a JSON array (e.g. legacy free text): keep the raw value as a
-            // single goal title so nothing is lost during the merge.
-            return List.of(goalsJson.trim());
-        } catch (JsonProcessingException e) {
-            return List.of(goalsJson.trim());
-        }
-    }
-
-    private String toGoalsJson(Collection<String> titles) {
-        try {
-            return MAPPER.writeValueAsString(titles);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize merged goals for user_profiles", e);
-        }
-    }
+//    private List<String> parseGoalsJson(String goalsJson) {
+//        if (goalsJson == null || goalsJson.isBlank()) {
+//            return List.of();
+//        }
+//        try {
+//            JsonNode node = MAPPER.readTree(goalsJson);
+//            if (node != null && node.isArray()) {
+//                List<String> titles = new ArrayList<>();
+//                for (JsonNode item : node) {
+//                    if (item != null && item.isTextual() && !item.asText().isBlank()) {
+//                        titles.add(item.asText().trim());
+//                    }
+//                }
+//                return titles;
+//            }
+//            // Not a JSON array (e.g. legacy free text): keep the raw value as a
+//            // single goal title so nothing is lost during the merge.
+//            return List.of(goalsJson.trim());
+//        } catch (JsonProcessingException e) {
+//            return List.of(goalsJson.trim());
+//        }
+//    }
+//
+//    private String toGoalsJson(Collection<String> titles) {
+//        try {
+//            return MAPPER.writeValueAsString(titles);
+//        } catch (JsonProcessingException e) {
+//            throw new IllegalStateException("Failed to serialize merged goals for user_profiles", e);
+//        }
+//    }
 
     private boolean tableExists(String tableName) {
         Integer count = jdbcTemplate.queryForObject(
