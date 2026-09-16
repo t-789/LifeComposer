@@ -137,8 +137,6 @@ public class ChatController {
             send(emitter, "error", Map.of("code", code, "message", message));
             send(emitter, "done", Map.of());
             emitter.complete();
-        } catch (ClientDisconnectedException e) {
-            emitter.completeWithError(e);
         } catch (Exception e) {
             emitter.completeWithError(e);
         }
