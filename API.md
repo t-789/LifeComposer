@@ -1,6 +1,6 @@
 # API 端点清单
 
-> v0.0.6 当前已实现端点（2026-09-14 同步，含审查整改）。与各 Controller 及 WebSecurityConfig 保持一致。Milestone 5 起所有状态变更请求需要 CSRF token；Milestone 7 起 `/api/admin/**` 与 `/admin/**` 全部仅限 `ROLE_ADMIN`。
+> v0.0.7 当前已实现端点（2026-09-20 同步：人工审核问题整改统一状态码写法与异常处理归属；对普通客户端端点与响应体格式未变；两处显式变化：客户端断开 `ClientAbortException` 由 400 改为 499，Bot/空 UA 请求在任意异常路径（含非法 JSON、缺少参数、类型转换等输入错误）统一 403、不再降级为 400，详见「错误响应约定」）。与各 Controller 及 WebSecurityConfig 保持一致。Milestone 5 起所有状态变更请求需要 CSRF token；Milestone 7 起 `/api/admin/**` 与 `/admin/**` 全部仅限 `ROLE_ADMIN`。
 
 ---
 
@@ -235,6 +235,16 @@
 - Session Cookie 设置 `HttpOnly=true`、`SameSite=Lax`；HTTPS 部署时设置 `SESSION_COOKIE_SECURE=true` / `CSRF_COOKIE_SECURE=true`。`XSRF-TOKEN` 需要被同源 JS 读取，因此不设为 HttpOnly。
 - CORS 允许来源通过 `app.security.allowed-origins` 显式配置，禁止使用 `*` 搭配 credentials。
 - 登录成功后重建 Session，防止 Session Fixation。
+
+## 错误响应约定（v0.0.7 归属整理）
+
+> v0.0.7 整理异常的**处理归属**，除下列显式变化外不改变既有状态码或响应体格式；生产代码的状态码统一使用 `HttpStatus` 命名常量。
+
+- **客户端输入错误**（`ValidationExceptionHandler`，`@Order(HIGHEST_PRECEDENCE)`）：Bean Validation → `400` + 字段到消息的 JSON map；`ConstraintViolationException` → `400 "Invalid input"`；类型转换失败 → `400 "Method argument type mismatch"`；缺少必填参数 → `400 "Missing servlet request parameter."`；非法/缺失 JSON body → `400 "请求体缺失或格式不正确"`；不支持的媒体类型 → `400 "Unsupported media type"`。这些请求**不**写入系统错误反馈。
+- **Bot 请求**：空 User-Agent 或爬虫关键词 → `403 "Forbidden"`。该策略由两个 advice 共用的 `BotRequestGuard` 执行，覆盖全部异常处理器（输入错误、路由错误、客户端断开、全局兜底），因此即使请求先触发非法 JSON、缺少参数或类型转换等输入错误，也仍然是 403 而不会降级为 400。
+- **路由与服务端错误**（`GlobalExceptionHandler`，`@Order(LOWEST_PRECEDENCE)`）：未知路径对 `/api/**` 返回 404（无 body），页面请求 302 重定向到 `/error/{code}`；不支持的 HTTP method 对 API 维持既有 404 契约；未知服务器异常返回 `500 "Internal Server Error"` 并写入系统 feedback（反馈写入失败不覆盖原错误）。
+- **客户端断开**：`ClientAbortException` → `499 Client Closed Request`，响应体 `"ClientAbortException"`；`AsyncRequestNotUsableException` → 维持 `500 "Internal Server Error"`。两者都被视为流生命周期事件（debug 日志、不写 feedback），且不再产生空 200 的“假成功”。`499` 是事实标准状态码，客户端已断开时不可见，但代理与访问日志可据此区分断开与成功/业务错误。
+- **管理端**：`/api/admin/**` 继续由 `AdminController` 局部处理，保持 `{"error":"<CODE>","message":"..."}` 与审计行为（`INVALID_PARAMETER` / `UNKNOWN_PARAMETER` / `NOT_FOUND` / `ADMIN_RATE_LIMIT` / `ADMIN_QUERY_FAILED`）。
 
 ## 认证与权限说明
 

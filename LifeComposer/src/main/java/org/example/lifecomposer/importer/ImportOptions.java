@@ -1,23 +1,40 @@
 package org.example.lifecomposer.importer;
 
+import lombok.Getter;
+
 import java.nio.file.Path;
-import java.util.Arrays;
 
 /** Parsed command-line options for the standalone import CLI. */
 public class ImportOptions {
 
+    @Getter
     private Path importDir;
+    @Getter
     private Path resourcesPath;
+    @Getter
     private Path profilesPath;
+    @Getter
     private Path ragChunksPath;
+    @Getter
     private Path capabilityTagsPath;
+    @Getter
     private Path creditRulesDir;
+    @Getter
     private Path reportPath;
+    @Getter
     private boolean rebuildEmbeddings;
+    @Getter
     private boolean dryRun;
+    @Getter
     private boolean help;
+    @Getter
     private String demoPassword = "testuser";
 
+    /**
+     * Internal importer-selection flags parsed from the CLI. They deliberately
+     * have no getters: only {@code shouldImport*()} derives the public decision,
+     * so callers cannot depend on the raw flags (v0.0.7 audit remediation).
+     */
     private boolean resourcesRequested;
     private boolean profilesRequested;
     private boolean ragRequested;
@@ -130,6 +147,7 @@ public class ImportOptions {
                 || ragChunksPath != null || capabilityTagsPath != null || creditRulesDir != null;
     }
 
+    /** Human-readable summary for the CLI banner; never contains the demo password. */
     public String describe() {
         return "import-dir=" + importDir
                 + ", resources=" + shouldImportResources()
@@ -140,16 +158,4 @@ public class ImportOptions {
                 + ", rebuildEmbeddings=" + rebuildEmbeddings
                 + ", dryRun=" + dryRun;
     }
-
-    public Path getImportDir() { return importDir; }
-    public Path getResourcesPath() { return resourcesPath; }
-    public Path getProfilesPath() { return profilesPath; }
-    public Path getRagChunksPath() { return ragChunksPath; }
-    public Path getCapabilityTagsPath() { return capabilityTagsPath; }
-    public Path getCreditRulesDir() { return creditRulesDir; }
-    public Path getReportPath() { return reportPath; }
-    public boolean isRebuildEmbeddings() { return rebuildEmbeddings; }
-    public boolean isDryRun() { return dryRun; }
-    public boolean isHelp() { return help; }
-    public String getDemoPassword() { return demoPassword; }
 }

@@ -1,30 +1,52 @@
 package org.example.lifecomposer.Exception;
 
+import jakarta.servlet.http.HttpServletRequest;
+import org.apache.catalina.connector.ClientAbortException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.example.lifecomposer.Service.FeedbackService;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.ConstraintViolationException;
 import java.net.URI;
 import java.util.Set;
 
+/**
+ * Global fallback for routing errors, server failures and system-error feedback.
+ *
+ * <p>Responsibility boundary (v0.0.7 audit remediation): this advice owns only
+ * exceptions that no narrower handler claims — unknown paths, unsupported HTTP
+ * methods, authentication-provider failures, client disconnects, and the final
+ * {@code Exception} fallback that records system feedback. Client input errors
+ * (Bean Validation, body parsing, type conversion, missing parameters and
+ * unsupported media types) belong to {@link ValidationExceptionHandler}.
+ *
+ * <p>Ordered {@link Ordered#LOWEST_PRECEDENCE} so an exact handler always wins
+ * over the {@code Exception.class} catch-all, regardless of bean registration
+ * order. The bot policy is shared with the input-error advice through
+ * {@link BotRequestGuard}.
+ */
 @ControllerAdvice
+@Order(Ordered.LOWEST_PRECEDENCE)
 public class GlobalExceptionHandler {
 
     private static final Logger logger = LogManager.getLogger(GlobalExceptionHandler.class);
 
-    private static final Set<String> BOT_USER_AGENTS = Set.of(
-            "bot", "crawler", "spider", "scraper", "python", "wget"
-    );
+    /**
+     * 499 is the de-facto "client closed request" status. It is not a business
+     * input error and must not be reported as a successful response.
+     */
+    private static final HttpStatusCode CLIENT_CLOSED_REQUEST = HttpStatusCode.valueOf(499);
 
     private static final Set<String> IGNORED_NOT_FOUND_URLS = Set.of(
             "/json/", "/squid-internal-mgr/cachemgr.cgi", "/board.cgi",
@@ -46,82 +68,94 @@ public class GlobalExceptionHandler {
         this.feedbackService = feedbackService;
     }
 
+    /** Unknown path: API gets a bare 404, pages keep the existing redirect contract. */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<String> handleNoResourceFound(NoResourceFoundException ex,
+                                                        WebRequest request,
+                                                        HttpServletRequest httpRequest) {
+        ResponseEntity<String> botResponse = BotRequestGuard.rejectIfBot(httpRequest);
+        if (botResponse != null) {
+            return botResponse;
+        }
+        if (IGNORED_NOT_FOUND_URLS.stream().noneMatch(url -> request.getDescription(false).contains(url))) {
+            logger.warn("Resource not found: {}", request.getDescription(false));
+        }
+        return routeMissingResource(httpRequest);
+    }
+
+    /** Unsupported HTTP method keeps the historical API 404 / page redirect contract. */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<String> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex,
+                                                           WebRequest request,
+                                                           HttpServletRequest httpRequest) {
+        ResponseEntity<String> botResponse = BotRequestGuard.rejectIfBot(httpRequest);
+        if (botResponse != null) {
+            return botResponse;
+        }
+        logger.warn("Method not supported: {}", request.getDescription(false));
+        return routeMissingResource(httpRequest);
+    }
+
+    /**
+     * The client closed the connection before the response was written, so it can
+     * never see this status; 499 keeps it out of both the "business input error"
+     * bucket (it used to be a 400) and the "successful response" bucket (a bare
+     * null handler would have produced an empty 200). It deliberately does not
+     * write system feedback.
+     */
+    @ExceptionHandler(ClientAbortException.class)
+    public ResponseEntity<String> handleClientAbort(ClientAbortException ex,
+                                                    WebRequest request,
+                                                    HttpServletRequest httpRequest) {
+        ResponseEntity<String> botResponse = BotRequestGuard.rejectIfBot(httpRequest);
+        if (botResponse != null) {
+            return botResponse;
+        }
+        logger.debug("Client aborted before the response was completed: {}", request.getDescription(false));
+        return ResponseEntity.status(CLIENT_CLOSED_REQUEST).body("ClientAbortException");
+    }
+
+    /**
+     * The async request can no longer be written to (typically the client is
+     * gone). It keeps the historical 500 server-error contract but never writes
+     * system feedback: a disconnect is not an application defect.
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public ResponseEntity<String> handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex,
+                                                              WebRequest request,
+                                                              HttpServletRequest httpRequest) {
+        ResponseEntity<String> botResponse = BotRequestGuard.rejectIfBot(httpRequest);
+        if (botResponse != null) {
+            return botResponse;
+        }
+        logger.debug("Async request no longer usable: {}", request.getDescription(false));
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Internal Server Error");
+    }
+
+    @ExceptionHandler(InternalAuthenticationServiceException.class)
+    public ResponseEntity<String> handleInternalAuthentication(InternalAuthenticationServiceException ex,
+                                                               WebRequest request,
+                                                               HttpServletRequest httpRequest) {
+        ResponseEntity<String> botResponse = BotRequestGuard.rejectIfBot(httpRequest);
+        if (botResponse != null) {
+            return botResponse;
+        }
+        logger.warn("InternalAuthenticationServiceException: {}", request.getDescription(false));
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Internal Server Error");
+    }
+
+    /**
+     * Final fallback: anything unclaimed is a server error, is logged with its
+     * stack trace and is recorded as system feedback. A feedback-write failure
+     * must never replace the original error (FIX: the catch below keeps the 500).
+     */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<String> handleException(Exception ex, WebRequest request, HttpServletRequest httpRequest) {
-        if (isBotRequest(request.getHeader("User-Agent"))) {
-            logger.warn("Bot request: {}", request.getDescription(false));
-            return ResponseEntity.status(403).body("Forbidden");
-        }
-
-        if (ex instanceof NoResourceFoundException) {
-            if (IGNORED_NOT_FOUND_URLS.stream().noneMatch(url -> request.getDescription(false).contains(url))) {
-                logger.warn("Resource not found: {}", request.getDescription(false));
-            }
-            if (isApiRequest(httpRequest)) {
-                return ResponseEntity.notFound().build();
-            }
-            return ResponseEntity.status(HttpStatus.FOUND)
-                    .location(URI.create("/error/404"))
-                    .build();
-        }
-
-        if (ex instanceof HttpRequestMethodNotSupportedException) {
-            logger.warn("Method not supported: {}", request.getDescription(false));
-            if (isApiRequest(httpRequest)) {
-                return ResponseEntity.notFound().build();
-            }
-            return ResponseEntity.status(HttpStatus.FOUND)
-                    .location(URI.create("/error/404"))
-                    .build();
-        }
-
-        if (ex instanceof org.apache.catalina.connector.ClientAbortException){
-            return ResponseEntity.badRequest().body("ClientAbortException");
-        }
-
-        if (ex instanceof org.springframework.web.HttpMediaTypeNotSupportedException) {
-            logger.warn("Media type not supported: {}", request.getDescription(false));
-            return ResponseEntity.status(400).body("Unsupported media type");
-        }
-
-        if (ex instanceof ConstraintViolationException) {
-            logger.warn("Constraint violation: {}", request.getDescription(false));
-            return ResponseEntity.badRequest().body("Invalid input");
-        }
-
-        if (ex instanceof MethodArgumentTypeMismatchException) {
-            logger.warn("Method argument type mismatch: {}", request.getDescription(false));
-            return ResponseEntity.badRequest().body("Method argument type mismatch");
-        }
-
-        if (ex instanceof org.springframework.web.bind.MethodArgumentNotValidException) {
-            logger.warn("Method argument not valid: {}", request.getDescription(false));
-            return ResponseEntity.badRequest().body("Method argument not valid.");
-        }
-
-        if (ex instanceof org.springframework.web.bind.MissingServletRequestParameterException) {
-            logger.warn("Missing servlet request parameter: {}", request.getDescription(false));
-            return ResponseEntity.badRequest().body("Missing servlet request parameter.");
-        }
-
-        // Review follow-up: a malformed or missing JSON body is a client error.
-        // Without this branch it fell through to the generic handler, which
-        // answered 500 and recorded a bogus system error in the feedback table.
-        if (ex instanceof org.springframework.http.converter.HttpMessageNotReadableException) {
-            logger.warn("Malformed request body: {}", request.getDescription(false));
-            // Plain text keeps this handler's uniform body contract; the frontend
-            // surfaces the message as-is and never injects it as markup.
-            return ResponseEntity.badRequest().body("请求体缺失或格式不正确");
-        }
-
-        if (ex instanceof org.springframework.security.authentication.InternalAuthenticationServiceException) {
-            logger.warn("InternalAuthenticationServiceException: {}", request.getDescription(false));
-            return ResponseEntity.status(500).body("Internal Server Error");
-        }
-
-        if (ex instanceof org.springframework.web.context.request.async.AsyncRequestNotUsableException) {
-            logger.warn("AsyncRequestNotUsableException occurred. {}", request.getDescription(false));
-            return ResponseEntity.status(500).body("Internal Server Error");
+    public ResponseEntity<String> handleUnhandled(Exception ex,
+                                                  WebRequest request,
+                                                  HttpServletRequest httpRequest) {
+        ResponseEntity<String> botResponse = BotRequestGuard.rejectIfBot(httpRequest);
+        if (botResponse != null) {
+            return botResponse;
         }
 
         logger.error("Unhandled exception occurred: ", ex);
@@ -139,13 +173,16 @@ public class GlobalExceptionHandler {
             logger.error("Failed to save system feedback: ", e);
         }
 
-        return ResponseEntity.status(500).body("Internal Server Error");
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Internal Server Error");
     }
 
-    private boolean isBotRequest(String userAgent) {
-        if (userAgent == null || userAgent.isEmpty()) return true;
-        String ua = userAgent.toLowerCase();
-        return BOT_USER_AGENTS.stream().anyMatch(ua::contains);
+    private ResponseEntity<String> routeMissingResource(HttpServletRequest request) {
+        if (isApiRequest(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create("/error/404"))
+                .build();
     }
 
     private boolean isApiRequest(HttpServletRequest request) {

@@ -42,7 +42,10 @@ class UserControllerTest extends BaseControllerTest {
                         .header("User-Agent", UA)
                         .contentType("application/json")
                         .content("{\"username\":\"ab\",\"password\":\"pass123\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                // real Spring context: Bean Validation must be owned by the
+                // field-map advice, not the global plain-text catch-all
+                .andExpect(jsonPath("$.username").exists());
     }
 
     @Test
@@ -52,7 +55,8 @@ class UserControllerTest extends BaseControllerTest {
                         .header("User-Agent", UA)
                         .contentType("application/json")
                         .content("{\"username\":\"validuser\",\"password\":\"\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.password").exists());
     }
 
     @Test

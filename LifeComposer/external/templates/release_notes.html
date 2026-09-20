@@ -158,6 +158,24 @@
             color: #7f8c8d;
             font-size: 0.85em;
         }
+        /* Existing version blocks use stat-item/stat-num/stat-label markup;
+           these aliases give them the same card styling as stat-card. */
+        .stat-item {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            border-left: 3px solid #3498db;
+        }
+        .stat-item .stat-num {
+            font-size: 1.6em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .stat-item .stat-label {
+            color: #7f8c8d;
+            font-size: 0.85em;
+        }
         code {
             background: #f0f4f8;
             padding: 1px 5px;
@@ -179,6 +197,74 @@
       版本命名规则见本页面已有的 Version 标签
       ============================================================
     -->
+
+    <!-- ========== v0.0.7 ========== -->
+    <div class="container">
+        <h1>v0.0.7 — 人工审核问题整改：状态码统一与异常边界整理</h1>
+        <p><em>2026 年 9 月 20 日</em></p>
+
+        <div class="stats-grid">
+            <div class="stat-item"><span class="stat-num">4</span><span class="stat-label">审核问题整改</span></div>
+            <div class="stat-item"><span class="stat-num">0</span><span class="stat-label">裸数字状态码</span></div>
+            <div class="stat-item"><span class="stat-num">2</span><span class="stat-label">异常处理归属</span></div>
+            <div class="stat-item"><span class="stat-num">21</span><span class="stat-label">新增异常契约测试</span></div>
+            <div class="stat-item"><span class="stat-num">336</span><span class="stat-label">自动化测试</span></div>
+        </div>
+
+        <div class="improvement-list">
+            <h3>本版本只做低风险质量整改</h3>
+            <p>处理人工审核提出的四个代码质量问题，不新增推荐算法、不迁移正式前端、不改动提示词组织方式，也不改变任何对外 API 协议与错误码。</p>
+        </div>
+
+        <h2>HTTP 状态码表达统一</h2>
+        <ul>
+            <li>生产代码中的 <code>ResponseEntity.status(401/403/429/503)</code> 全部改为 <code>HttpStatus</code> 命名常量
+                （<code>HttpStatus.UNAUTHORIZED</code> / <code>FORBIDDEN</code> / <code>TOO_MANY_REQUESTS</code> /
+                <code>SERVICE_UNAVAILABLE</code>）</li>
+            <li>Servlet 过滤器继续使用合法的 <code>HttpServletResponse.SC_*</code> 常量（<code>SC_FORBIDDEN</code> /
+                <code>SC_UNAUTHORIZED</code>），同一文件内保持一致，不引入额外耦合</li>
+            <li>规则已写入 <code>AGENTS.md</code>「开发风格约定」：生产代码禁止裸数字 HTTP 状态码</li>
+        </ul>
+
+        <h2>异常处理边界整理</h2>
+        <ul>
+            <li>一个异常类型只有一个处理归属：<code>ValidationExceptionHandler</code>
+                （<code>@RestControllerAdvice</code> + 最高优先级）负责 Bean Validation、类型转换、缺失参数、
+                非法 JSON 与不支持的媒体类型 → 稳定 400；<code>GlobalExceptionHandler</code>（最低优先级）
+                只保留未知路径、方法不支持、认证内部错误、客户端断开与最终 <code>Exception</code> 兜底</li>
+            <li><code>GlobalExceptionHandler</code> 不再用 <code>instanceof</code> 长链分派输入校验分支；
+                两个 advice 以 <code>@Order</code> 固定优先级，避免 advice 竞争产生重复响应</li>
+            <li>客户端断开按流生命周期处理且状态码显式化：<code>ClientAbortException</code> → <code>499 Client Closed Request</code>
+                （不再伪造成 400 业务输入错误，也不产生空 200 的“假成功”），<code>AsyncRequestNotUsableException</code> →
+                维持 <code>500 "Internal Server Error"</code>；两者只记 debug 日志，不写入系统错误反馈</li>
+            <li>Bot 策略（空 User-Agent / 爬虫关键词 → 403）抽到两个 advice 共用的 <code>BotRequestGuard</code>：
+                覆盖全部异常处理器（输入错误、路由错误、客户端断开、全局兜底）：即使 Bot 请求先触发非法 JSON、缺少参数、类型转换或客户端断开，也仍然返回 403 而不会降级为 400</li>
+            <li>未知服务器异常仍返回 <code>500 "Internal Server Error"</code> 并写入系统 feedback；
+                反馈写入失败不会覆盖原始错误</li>
+            <li>管理控制台继续由 <code>AdminController</code> 局部处理，保留 <code>ADMIN_RATE_LIMIT</code> /
+                <code>ADMIN_QUERY_FAILED</code> 等稳定错误码与审计行为</li>
+            <li>新增 <code>ExceptionHandlingContractTest</code>（21 例）覆盖缺失/非法 JSON、Bean Validation、
+                未知路径、错误 HTTP method、未知异常、客户端断开、Bot 拒绝以及 feedback 写入/不写入</li>
+        </ul>
+
+        <h2>导入 DTO 可维护性</h2>
+        <ul>
+            <li><code>ImportOptions</code> 的对外读取字段改用字段级 Lombok <code>@Getter</code> 并删除手写 getter；
+                <code>resourcesRequested</code> 等仅供内部选择使用的标志不生成 getter，保持现有调用契约</li>
+            <li><code>ImportError</code> 明确为有意设计的不可变 <code>record</code>：补充 JavaDoc 说明
+                <code>record=0</code> 表示“没有可用的 1-based 数组序号”（文件级、键控对象成员与 embedding 合成阶段）、
+                <code>businessKey</code> 允许为空等约定；
+                新增 <code>ImportErrorTest</code> 锁定四个访问器、值相等性与报告 JSON 字段名</li>
+        </ul>
+
+        <h2>测试与验收</h2>
+        <ul>
+            <li>自动化测试 <strong>336 个，0 失败</strong>（新增 21 例异常契约测试 + 4 例 <code>ImportError</code> 测试）</li>
+            <li>对普通客户端，除客户端断开 <code>ClientAbortException</code> 由 400 明确为 499 外，其余状态码与响应体格式与整改前保持兼容；
+                <code>rg</code> 扫描生产 Java 已无 <code>ResponseEntity.status(数字)</code></li>
+            <li>新增 Bot + 输入错误组合用例，锁定“Bot 不能靠非法 JSON / 缺少参数绕过 403”</li>
+        </ul>
+    </div>
 
     <!-- ========== v0.0.6 ========== -->
     <div class="container">

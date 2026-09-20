@@ -69,7 +69,7 @@ public class UserController {
                 securityProperties.getRegisterPerMinutePerIp())) {
             long retryAfter = registrationRateLimiter.retryAfterSeconds(clientIp);
             LOG.warn("AUDIT event=register_rate_limited ip={} retryAfterSeconds={}", clientIp, retryAfter);
-            return ResponseEntity.status(429)
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .header("Retry-After", String.valueOf(retryAfter))
                     .body(Map.of(
                             "error", "REGISTER_RATE_LIMIT",
@@ -91,7 +91,7 @@ public class UserController {
             long retryAfter = loginAttemptService.retryAfterSeconds(username, clientIp);
             LOG.warn("AUDIT event=login_locked username={} ip={} retryAfterSeconds={}",
                     username, clientIp, retryAfter);
-            return ResponseEntity.status(429)
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .header("Retry-After", String.valueOf(retryAfter))
                     .body(Map.of(
                             "error", "LOGIN_LOCKED",
@@ -260,7 +260,7 @@ public class UserController {
     @GetMapping("/all")
     public ResponseEntity<?> getAllUsers(Authentication authentication) {
         if (isNotAdmin(authentication)) {
-            return ResponseEntity.status(403).body(Map.of("error", "权限不足"));
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "权限不足"));
         }
         // FIX: filter out passwordHash to prevent credential leakage
         return ResponseEntity.ok(userService.getAllUsers().stream()
@@ -283,7 +283,7 @@ public class UserController {
     @PutMapping("{userId}/grant-admin")
     public ResponseEntity<?> grantAdmin(@PathVariable int userId, Authentication authentication) {
         if (isNotAdmin(authentication)) {
-            return ResponseEntity.status(403).body("权限不足");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("权限不足");
         }
         boolean success = userService.grantAdminPermission(userId);
         return success ? ResponseEntity.ok("用户" + userId + "已被赋予管理员权限")
@@ -293,7 +293,7 @@ public class UserController {
     @PutMapping("/{userId}/revoke-admin")
     public ResponseEntity<?> revokeAdmin(@PathVariable int userId, Authentication authentication) {
         if (isNotAdmin(authentication)) {
-            return ResponseEntity.status(403).body("权限不足");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("权限不足");
         }
         return removalResponse(userService.revokeAdminPermission(userId), "撤销管理员权限",
                 "用户" + userId + "已被撤销管理员权限");
@@ -304,7 +304,7 @@ public class UserController {
                                      @RequestBody(required = false) Map<String, String> payload,
                                      Authentication authentication) {
         if (isNotAdmin(authentication)) {
-            return ResponseEntity.status(403).body("权限不足");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("权限不足");
         }
 
         // Review follow-up: a missing body is a client error (400), not a 500 that
@@ -340,7 +340,7 @@ public class UserController {
     @PutMapping("/{userId}/unban")
     public ResponseEntity<?> unbanUser(@PathVariable int userId, Authentication authentication) {
         if (isNotAdmin(authentication)) {
-            return ResponseEntity.status(403).body("权限不足");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("权限不足");
         }
         boolean success = userService.unbanUser(userId);
         return success ? ResponseEntity.ok("用户解封操作完成") : ResponseEntity.badRequest().body("解封操作失败");

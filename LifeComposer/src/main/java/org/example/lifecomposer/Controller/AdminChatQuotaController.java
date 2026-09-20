@@ -6,6 +6,7 @@ import org.example.lifecomposer.Entity.User;
 import org.example.lifecomposer.Repository.UserRepository;
 import org.example.lifecomposer.Service.ChatQuotaDecision;
 import org.example.lifecomposer.Service.ChatQuotaService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -32,7 +33,7 @@ public class AdminChatQuotaController {
     @PostMapping("/reset/{userId}")
     public ResponseEntity<?> resetToday(@PathVariable int userId, Authentication authentication) {
         if (isNotAdmin(authentication)) {
-            return ResponseEntity.status(403).body(Map.of("error", "权限不足"));
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "权限不足"));
         }
         User target = userRepository.findById(userId);
         if (target == null) {

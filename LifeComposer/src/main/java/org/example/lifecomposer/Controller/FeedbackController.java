@@ -5,6 +5,7 @@ import org.example.lifecomposer.dto.FeedbackRequest;
 import org.example.lifecomposer.Entity.User;
 import org.example.lifecomposer.Entity.UserType;
 import org.example.lifecomposer.Service.FeedbackService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -83,7 +84,7 @@ public class FeedbackController {
     @GetMapping("/all")
     public ResponseEntity<?> getAllFeedback(Authentication authentication) {
         if (isNotAdmin(authentication)) {
-            return ResponseEntity.status(403).body(Map.of("error", "权限不足"));
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "权限不足"));
         }
         return ResponseEntity.ok(feedbackService.getAllFeedback());
     }
@@ -91,7 +92,7 @@ public class FeedbackController {
     @GetMapping("/type/{type}")
     public ResponseEntity<?> getFeedbackByType(@PathVariable String type, Authentication authentication) {
         if (isNotAdmin(authentication)) {
-            return ResponseEntity.status(403).body(Map.of("error", "权限不足"));
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "权限不足"));
         }
         return ResponseEntity.ok(feedbackService.getFeedbackByType(type));
     }
@@ -101,7 +102,7 @@ public class FeedbackController {
                                              @RequestBody(required = false) Map<String, Object> payload,
                                              Authentication authentication) {
         if (isNotAdmin(authentication)) {
-            return ResponseEntity.status(403).body(Map.of("error", "权限不足"));
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "权限不足"));
         }
 
         boolean resolved = payload == null || payload.get("resolved") == null || Boolean.TRUE.equals(payload.get("resolved"));

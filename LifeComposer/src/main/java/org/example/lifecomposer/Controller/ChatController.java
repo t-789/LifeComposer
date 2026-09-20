@@ -15,6 +15,7 @@ import org.example.lifecomposer.config.AppSecurityProperties;
 import org.example.lifecomposer.dto.ChatRequest;
 import org.example.lifecomposer.dto.ChatResponse;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -57,7 +58,7 @@ public class ChatController {
                                          Authentication authentication) {
         Integer userId = resolveUserId(authentication);
         if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "未登录"));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "未登录"));
         }
         ChatQuotaDecision quota = chatQuotaService.tryConsume(userId);
         if (!quota.allowed()) {
@@ -68,7 +69,7 @@ public class ChatController {
                     userId, request.getMessage(), effectiveMaxTokens(request.getMaxTokens()));
             return ResponseEntity.ok(response);
         } catch (LlmUnavailableException e) {
-            return ResponseEntity.status(503).body(Map.of(
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
                     "error", e.getCode(),
                     "message", "LLM 不可用，请稍后重试"));
         }
@@ -79,7 +80,7 @@ public class ChatController {
                                            Authentication authentication) {
         Integer userId = resolveUserId(authentication);
         if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "未登录"));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "未登录"));
         }
         ChatQuotaDecision quota = chatQuotaService.tryConsume(userId);
         if (!quota.allowed()) {
@@ -119,7 +120,7 @@ public class ChatController {
         body.put("remainingToday", quota.remainingToday());
         body.put("minuteLimit", quota.minuteLimit());
         body.put("minuteRemaining", quota.minuteRemaining());
-        return ResponseEntity.status(429)
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header("Retry-After", String.valueOf(quota.retryAfterSeconds()))
                 .body(body);
     }
@@ -156,7 +157,7 @@ public class ChatController {
     public ResponseEntity<?> getHistory(Authentication authentication) {
         Integer userId = resolveUserId(authentication);
         if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "未登录"));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "未登录"));
         }
         List<ChatMessage> messages = chatService.getHistory(userId);
         return ResponseEntity.ok(messages);
@@ -166,7 +167,7 @@ public class ChatController {
     public ResponseEntity<?> clearContext(Authentication authentication) {
         Integer userId = resolveUserId(authentication);
         if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "未登录"));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "未登录"));
         }
         int deleted = chatService.clearContext(userId);
         return ResponseEntity.ok(Map.of("deleted", deleted));

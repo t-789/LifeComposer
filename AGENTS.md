@@ -4,7 +4,7 @@
 
 大学生成长规划助手后端。基于 Spring Boot 4.0.5 + SQLite + JdbcTemplate。
 
-### 当前状态（2026-09-14 v0.0.6 后）
+### 当前状态（2026-09-20 v0.0.7 后）
 
 基础后端 + 数据底座 + Agent tool-use + 运维控制台已搭建完成，包含：
 - 用户系统（注册/登录/Session/Admin）
@@ -25,7 +25,8 @@
 - **SSE 流式过程展示**（thinking 计时 / tool_call / tool_result / token / assistant_message / error / done）
 - 生成式 LLM 默认统一切换 DeepSeek `deepseek-flash`；`/api/chat/*` 不使用 fallback（503 / SSE error）
 - 启动脚本 `run.sh`（环境变量加载，密钥安全）
-- 311 个自动化测试，全部通过
+- **人工审核问题整改（v0.0.7）**：生产代码 HTTP 状态码统一为 `HttpStatus` 命名常量；`GlobalExceptionHandler` 与 `ValidationExceptionHandler` 职责边界拆分（输入错误 vs 全局兜底）并按 `@Order` 固定优先级；客户端断开（`ClientAbortException` / `AsyncRequestNotUsableException`）按流生命周期处理、不再误写系统反馈；`ImportOptions` 用字段级 Lombok `@Getter` 收敛简单 getter；`ImportError` record 意图文档化并用测试锁定
+- 336 个自动化测试，全部通过
 
 ### 下一阶段目标
 
@@ -123,7 +124,7 @@ PROJECT_PLAN.md                      # 项目规划、进度与调研数据
 ./import.sh --import-dir=../样例 --report=target/import-report.json
 ./import.sh --import-dir=../样例 --dry-run
 
-# 测试（311 个）
+# 测试（336 个）
 ./mvnw test -Dspring.profiles.active=test
 # 若沙箱/权限环境报 sqlite 原生库解包失败，加：-Djava.io.tmpdir=target/tmp（先 mkdir -p target/tmp）
 
@@ -179,9 +180,14 @@ curl -s http://localhost:18000/api/qa/health
 - `GlobalExceptionHandler` 新增 `HttpMessageNotReadableException` → 400（此前缺失请求体会落到通用分支返回 500 并写入 feedback）
 
 
-### Exception 层
-- `GlobalExceptionHandler` 会截获所有 404/500 并自动记录到 feedback 表
-- 内置 Bot 请求检测（空 User-Agent / 爬虫关键词 → 403）
+### Exception 层（v0.0.7 归属整理）
+- **一个异常类型只有一个处理归属**：
+  - `ValidationExceptionHandler`（`@RestControllerAdvice` + `@Order(HIGHEST_PRECEDENCE)`）：Bean Validation（字段错误 JSON map）、`ConstraintViolationException`、`MethodArgumentTypeMismatchException`、`MissingServletRequestParameterException`、`HttpMessageNotReadableException`、`HttpMediaTypeNotSupportedException` → 稳定 400
+  - `GlobalExceptionHandler`（`@ControllerAdvice` + `@Order(LOWEST_PRECEDENCE)`）：未知路径 / 不支持的方法 / 认证内部错误 / 客户端断开 / 最终 `Exception` 兜底（记录系统 feedback）
+  - `AdminController` 保留自己的 `AdminApiException` / `DataAccessException` 局部处理（管理端稳定错误码 + 审计）
+- 未知服务器异常仍写入 feedback 表；但校验失败、正常 404、Bot 拒绝与客户端主动断开**不**写 feedback
+- `ClientAbortException` → `499 Client Closed Request`（客户端已断开，不伪造成业务输入错误、也不产生空 200，不写反馈）；`AsyncRequestNotUsableException` → 保持 `500 "Internal Server Error"`，同样不写反馈
+- Bot 请求检测（空 User-Agent / 爬虫关键词 → 403）由 `Exception/BotRequestGuard` 统一提供，两个 advice 都调用：先命中输入错误也不能绕过 403
 - 大量已知扫描路径静默忽略（`IGNORED_NOT_FOUND_URLS` 列表）
 - API 请求返回纯 JSON，页面请求重定向到 `/error/{code}`
 
@@ -226,7 +232,7 @@ curl -s http://localhost:18000/api/qa/health
 - 测试基类：`BaseControllerTest`（MockMvc + SecurityMockMvc + 独立测试 DB）
 - 隔离数据库：`target/test-data.db`（通过 `application-test.properties` 配置）
 - **生产数据永不污染**：测试不触碰 `data.db`，启动时通过 `before/after` 时间戳验证
-- 全量测试 311 个，通过 `./mvnw test -Dspring.profiles.active=test` 一键运行
+- 全量测试 336 个，通过 `./mvnw test -Dspring.profiles.active=test` 一键运行
 - 测试专用初始管理员密码写在 `application-test.properties`（`lifecomposer.admin.initial-password`），生产规则不降级；`BaseControllerTest.loginAsAdmin()` 使用强口令 `AdminTestPassw0rd!2026`，不再写入历史弱口令
 - `application-test.properties` 的 `spring.thymeleaf.prefix` 指向 `file:./external/templates/`，以便对 `/admin/**` 页面路由做端到端断言
 - `org.example.lifecomposer.support.AuditLogCapture` 可挂载 Log4j2 appender 断言审计日志内容（含"日志不含敏感值"的负向断言）
@@ -249,6 +255,8 @@ curl -s http://localhost:18000/api/qa/health
 6. **Fix 注释风格**：`// FIX: explanation` 记录 AI 识别并修复的老代码问题
 7. **日志使用 Log4j2**（Spring Boot 默认 Logback 已被排除）
 8. **所有权检查**：任何访问用户私有数据（profile/credit-activities/planning/chat）的端点**必须**通过 SecurityContext 解析当前用户并验证归属，禁止跨用户读取
+9. **HTTP 状态码表达**：生产代码禁止裸数字状态码（如 `ResponseEntity.status(401)`）。统一使用 `HttpStatus` 命名常量（`HttpStatus.UNAUTHORIZED` / `FORBIDDEN` / `NOT_FOUND` / `TOO_MANY_REQUESTS` / `SERVICE_UNAVAILABLE` / `INTERNAL_SERVER_ERROR` 等）；Servlet 过滤器可用 `HttpServletResponse.SC_*` 或等价的 `HttpStatus.value()`，但同一文件内保持一致；`@ExceptionHandler` 返回已有语义 builder（`badRequest()` / `notFound()`）时不受影响
+10. **异常归属**：新增异常先决定归属——客户端输入错误放 `ValidationExceptionHandler`，全局兜底放 `GlobalExceptionHandler`，业务分支留在所属 Controller；不要在 `Exception.class` 中继续堆积 `instanceof` 分支
 
 ---
 
@@ -293,3 +301,4 @@ curl -s http://localhost:18000/api/qa/health
 | v0.0.4 | 2026-09-13 | 独立数据导入 CLI；Ollama embedding + SQLite RAG 检索；Agent 多轮 tool-use；`/api/chat/stream` SSE 与 chat_test.html 过程展示；生成用途切 deepseek-flash，`/api/chat/*` 禁止 fallback；164 测试全绿 |
 | v0.0.5 | 2026-09-13 | Milestone 5 安全加固：CSRF、Session 加固、聊天分钟/每日限流与 chat_usage_daily、max_tokens=1024、管理员重置当日额度、注册/登录限速与审计日志；188 测试全绿 |
 | v0.0.6 | 2026-09-14 | Milestone 6 管理员初始化与密码安全整改（`LIFECOMPOSER_INITIAL_ADMIN_PASSWORD` fail-fast、存量弱口令强制轮换、临时密码重置不回显、最后一个管理员保护）+ Milestone 7 数据库管理与调试控制台（`/api/admin/**` 只读 API：分页/白名单筛选排序/限流/审计/字段清单；`/admin/**` 13 个统一布局视图，全部 textContent 渲染）；审查整改：临时密码状态/有效期/首次登录强制修改/旧会话自动失效、最后管理员保护改为原子 SQL + 立即写事务（并发安全）、管理员确认为可信调试角色（详见 API.md 信任模型）；311 测试全绿 |
+| v0.0.7 | 2026-09-20 | 人工审核问题整改：生产代码 HTTP 状态码统一为 `HttpStatus` 命名常量；`GlobalExceptionHandler`/`ValidationExceptionHandler` 职责边界拆分并 `@Order` 固定优先级（输入错误 vs 全局兜底），客户端断开显式化（`ClientAbortException` → 499、`AsyncRequestNotUsableException` → 500）且不误写系统反馈，未知异常仍写 feedback；Bot 策略抽到两个 advice 共用的 `BotRequestGuard`（Bot 不能靠输入错误绕过 403）；`ImportOptions` 字段级 Lombok `@Getter` 收敛简单 getter；`ImportError` record 意图文档化并由 `ImportErrorTest` 锁定字段/相等性/JSON 名；新增 `ExceptionHandlingContractTest` 21 例异常契约矩阵（含 Bot 与输入错误/客户端断开组合）；336 测试全绿 |
