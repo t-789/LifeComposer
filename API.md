@@ -2,46 +2,52 @@
 
 > v0.0.7 当前已实现端点（2026-09-20 同步：人工审核问题整改统一状态码写法与异常处理归属；对普通客户端端点与响应体格式未变；两处显式变化：客户端断开 `ClientAbortException` 由 400 改为 499，Bot/空 UA 请求在任意异常路径（含非法 JSON、缺少参数、类型转换等输入错误）统一 403、不再降级为 400，详见「错误响应约定」）。与各 Controller 及 WebSecurityConfig 保持一致。Milestone 5 起所有状态变更请求需要 CSRF token；Milestone 7 起 `/api/admin/**` 与 `/admin/**` 全部仅限 `ROLE_ADMIN`。
 
+> **v0.0.7 校对修正（逐端点对照源码，2026-09-22）**：
+> ① **未登录访问受保护端点返回 `403`，不是 `401`** —— 这些路径在 Spring Security 过滤器链上就被拦截，而本项目未配置自定义 `AuthenticationEntryPoint`，走默认的 `Http403ForbiddenEntryPoint`；`401` 仅来自会话守卫的 `SESSION_EXPIRED` / `PASSWORD_CHANGE_REQUIRED` / `TEMP_PASSWORD_EXPIRED` 三种情况（见「临时密码生命周期」），以及极少数过滤器链已放行但会话缺 `user` 属性的边界分支。
+> ② **CSRF 覆盖所有 POST/PUT/DELETE，包括 `register` / `login` 等公开端点** —— 「公开端点」不等于「免 CSRF」，缺 token 一律 403。
+> ③ 字段级请求/响应说明、完整错误码与坑位清单见 [`API_GUIDE.md`](./API_GUIDE.md)。
+
 ---
 
 ## 用户管理
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| POST | `/api/users/register` | 无 | 注册（用户名 3-20 字符，密码 1-50） |
-| POST | `/api/users/login` | 无 | 登录并设置 session。返回 JSON：`message` / `username` / `type` / `passwordChangeRequired` / `tempPasswordExpiresAt`。密码错误返回 400 `BAD_CREDENTIALS`；临时密码过期返回 403 `TEMP_PASSWORD_EXPIRED`；`passwordChangeRequired=true` 时必须先访问 `/front/change-password` |
-| POST | `/api/users/logout` | 已登录 | 登出，清除 session |
-| GET | `/api/users/current` | 已登录 | 获取当前用户信息（id/username/type/avatar/isBanned/banEndTime） |
-| GET | `/api/users/all` | ADMIN | 获取所有用户（不含密码哈希） |
-| PUT | `/api/users/{userId}/grant-admin` | ADMIN | 授予管理员 |
+| POST | `/api/users/register` | 无（**需 CSRF**） | 注册（用户名 3-20 字符，密码 1-50，**注册不做密码强度校验**）。成功/失败均返回**纯文本**（`注册成功` / `注册失败，用户名可能已存在`）。每 IP 每分钟 10 次，超限 429 `REGISTER_RATE_LIMIT` |
+| POST | `/api/users/login` | 无（**需 CSRF**） | 登录并设置 session。返回 JSON：`message` / `username` / `type` / `passwordChangeRequired` / `tempPasswordExpiresAt`。密码错误返回 400 `BAD_CREDENTIALS`；账号被封禁返回 400 `LOGIN_REJECTED`；连续失败 5 次锁定 15 分钟并返回 429 `LOGIN_LOCKED`；临时密码过期返回 403 `TEMP_PASSWORD_EXPIRED`；`passwordChangeRequired=true` 时必须先访问 `/front/change-password` |
+| POST | `/api/users/logout` | 已登录 | 登出，清除 session。返回纯文本 `登出成功` |
+| GET | `/api/users/current` | 已登录 | 获取当前用户信息（id/username/type/avatar/**isBanned**/banEndTime）。未登录由过滤器链拦截 → **403** |
+| GET | `/api/users/all` | ADMIN | 获取所有用户（不含密码哈希）。该端点字段名是 `banned`（与 `/current` 的 `isBanned` 不同） |
+| PUT | `/api/users/{userId}/grant-admin` | ADMIN | 授予管理员。用户不存在返回 400（注意：不是 404） |
 | PUT | `/api/users/{userId}/revoke-admin` | ADMIN | 撤销管理员；系统必须保留至少一个可登录管理员，否则返回 409 `LAST_ADMIN_PROTECTED`；用户不存在返回 404 |
-| PUT | `/api/users/{userId}/ban` | ADMIN | 封禁（body `{"banTime":"1d|30m|1y|0"}`，`0` 为永久；body 缺失/非法返回 400，最后一个可登录管理员返回 409 `LAST_ADMIN_PROTECTED`） |
+| PUT | `/api/users/{userId}/ban` | ADMIN | 封禁（body `{"banTime":"1d"}`）。单位：`y`=365 天、**`m`=30 天（月，不是分钟）**、`d`=天、`h`=小时，可组合如 `1y30d`；`"0"` 为永久。body 缺失/非法返回 400 `INVALID_INPUT`，最后一个可登录管理员返回 409 `LAST_ADMIN_PROTECTED`。封禁到期后下次登录自动解封 |
 | PUT | `/api/users/{userId}/unban` | ADMIN | 解封 |
 | POST | `/api/users/admin/reset-password/{userId}` | ADMIN | v0.0.6：下发**临时密码**，body `{"newPassword":"..."}`。管理员账户要求 ≥12 字符、普通用户账户要求 ≥8 字符，且均不得是已知弱密码；响应只返回 `message`/`passwordChangeRequired`/`tempPasswordExpiresAt`，绝不回显密码。临时密码带状态与有效期，见下文「临时密码生命周期」 |
 | POST | `/api/users/password` | 已登录 | v0.0.6：自助修改密码，body `{"currentPassword":"...","newPassword":"..."}`；错误当前密码/弱新密码/与原密码相同返回 400 `PASSWORD_REJECTED`。成功后当前会话保留，该账户的其他会话立即失效 |
 | GET | `/front/change-password` | 已登录 | v0.0.6：修改密码页面（临时密码会话唯一可访问的业务页面） |
-| POST | `/api/users/admin/chat-quota/reset/{userId}` | ADMIN | v0.0.5：重置指定用户当前 Asia/Shanghai 自然日的聊天额度，返回新的剩余额度 |
-| GET | `/api/csrf` | 无 | v0.0.5：返回当前会话的 CSRF token（headerName/token），并写入可读的 XSRF-TOKEN Cookie |
+| POST | `/api/users/admin/chat-quota/reset/{userId}` | ADMIN | v0.0.5：重置指定用户当前 Asia/Shanghai 自然日的聊天额度（无日期参数），返回 `userId`/`usageDate`/`usedToday`/`remainingToday`/`dailyLimit`/`minuteLimit`/`minuteRemaining`，并写审计日志 |
+| GET | `/api/csrf` | 无 | v0.0.5：返回当前会话的 CSRF token（`headerName`=`X-XSRF-TOKEN`、`parameterName`=`_csrf`、`token`），并写入可读的 XSRF-TOKEN Cookie |
 
 ## 反馈管理
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| POST | `/api/feedback/submit` | 无 | 用户反馈（可匿名，已登录则记录用户） |
-| POST | `/api/feedback/system-error` | 无 | 系统错误报告 |
+| POST | `/api/feedback/submit` | 无（**需 CSRF**） | 用户反馈（可匿名，已登录则记录用户；未登录记为 `Anonymous`/`userId=-1`）。`content` 空白返回 400 |
+| POST | `/api/feedback/system-error` | 无（**需 CSRF**） | 系统错误报告（`content` 空白时落库为 `未提供错误详情`） |
 | GET | `/api/feedback/all` | ADMIN | 所有反馈 |
-| GET | `/api/feedback/type/{type}` | ADMIN | 按类型过滤 |
-| POST | `/api/feedback/{id}/resolve` | ADMIN | 标记已解决/未解决（body `resolved` 缺省视为 true） |
+| GET | `/api/feedback/type/{type}` | ADMIN | 按类型过滤（`user` / `system`） |
+| POST | `/api/feedback/{id}/resolve` | ADMIN | 标记已解决/未解决（body `resolved` 缺省视为 true），记录 `resolvedBy` |
 
 ## 用户画像
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| GET | `/api/profiles/me` | 已登录 | 获取当前用户画像 |
-| PUT | `/api/profiles/me` | 已登录 | Upsert 当前用户画像 |
+| GET | `/api/profiles/me` | 已登录 | 获取当前用户画像；尚未填写时返回 404 纯文本 `用户档案不存在` |
+| PUT | `/api/profiles/me` | 已登录 | Upsert 当前用户画像，**全量覆盖**：未提交的字段会被写成 `NULL`（局部更新前必须先 GET 合并）；返回落库后重新读取的画像 |
 
 - 画像字段：`college`、`major`、`grade`、`studentId`、`skillsJson`、`interestsJson`、`experiencesJson`、`preferencesJson`
 - **v0.0.3 新增字段**：`availableTime`（每周可投入时间，自由文本）、`goals`（用户成长目标，JSON 数组字符串）
+- 所有 `*Json` 字段与 `goals` 在传输层都是 **string**（内容是 JSON 文本），前端收发需自行 `JSON.stringify` / `JSON.parse`
 - 原独立 `goals` 表及其整套目标 CRUD 端点已移除，目标统一由 `user_profiles.goals` 列承载
 
 ## 规划历史
@@ -49,30 +55,31 @@
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
 | GET | `/api/planning/history` | 已登录 | 当前用户的 AI 交互历史 |
-| GET | `/api/planning/history/{id}` | 已登录 | 历史详情（仅本人） |
+| GET | `/api/planning/history/{id}` | 已登录 | 历史详情（仅本人）；不存在或非本人均返回 400 纯文本（`规划记录不存在` / `无权访问此记录`，注意不是 403） |
 
 ## 问答
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
 | GET | `/api/qa/health` | 无 | LLM 健康检查（返回 provider/model/enabled/status 状态） |
-| POST | `/api/qa/ask` | 已登录 | 提问，返回回答和 historyId |
+| POST | `/api/qa/ask` | 已登录 | 提问，返回回答和 historyId。**保留 mock fallback**：LLM 失败时返回 `mocked:true`、`provider:"mock"`、答案前缀 `[Mock]`，并写一条 `status=FAILED` 历史（与 `/api/chat/*` 不同） |
 
 ## 对话 (Chat)
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| POST | `/api/chat/send` | 已登录 | 兼容旧客户端的一次性 JSON；内部复用同一 Agent 多轮 tool-use 逻辑。LLM 不可用时返回 HTTP 503 `{"error":"LLM_UNAVAILABLE",...}`；超过分钟/日额度返回 HTTP 429，body 含 retryAfterSeconds / remainingToday |
+| POST | `/api/chat/send` | 已登录 | 兼容旧客户端的一次性 JSON；body `{"message":"...","maxTokens":可选}`（`message` ≤5000 字符；服务端强制 `maxTokens` 上限 1024）。内部复用同一 Agent 多轮 tool-use 逻辑。LLM 不可用时返回 HTTP 503 `{"error":"LLM_UNAVAILABLE",...}`；超过分钟/日额度返回 HTTP 429，body 含 `retryAfterSeconds` / `remainingToday` / `minuteRemaining` 等 |
 | POST | `/api/chat/stream` | 已登录 | SSE 流式对话。事件：`thinking_start` / `thinking_tick`(可选) / `thinking_end` / `tool_call` / `tool_result` / `token` / `assistant_message` / `error` / `done`；准入失败返回 HTTP 429 JSON 而不是 SSE |
 | GET | `/api/chat/history` | 已登录 | 获取当前用户的对话历史（`chat_messages` 按时间稳定排序）；包含 user / assistant / tool 行 |
-| DELETE | `/api/chat/context` | 已登录 | 清除当前用户的对话上下文，返回 `{"deleted": n}` |
+| DELETE | `/api/chat/context` | 已登录 | 清除当前用户的对话上下文（**物理删除**，会影响后续 LLM 上下文），返回 `{"deleted": n}` |
 
-> **v0.0.4 说明**：`/api/chat/*` 不使用 fallback 或 mock 回复。API key 缺失、HTTP 非 2xx、超时、格式错误、流中断均视为 `LLM_UNAVAILABLE`；SSE 发送 `error` 事件后关闭。一次工具调用会持久化两条 `chat_messages`：assistant 的 tool_call JSON 和 tool 的 tool_result JSON。
+> **v0.0.4 说明**：`/api/chat/*` 不使用 fallback 或 mock 回复。API key 缺失、HTTP 非 2xx、超时、格式错误、流中断均视为 `LLM_UNAVAILABLE`；SSE 发送 `error` 事件后关闭。一次工具调用会持久化两条 `chat_messages`：assistant 的 tool_call JSON 和 tool 的 tool_result JSON。工具调用超过 8 轮时以 `MAX_TOOL_ROUNDS` 失败。
 >
 > - 思考计时：首次收到 `reasoning_content` 才发送 `thinking_start`；reasoning 中出现 `</think>` / `done thinking`，或 reasoning 阶段结束（首个 `content`、流结束、报错）时发送 `thinking_end`。普通 `token` / `tool_call` 不再提前停止计时。
 > - 持久化顺序：SSE 场景下先成功发送 `tool_call` / `tool_result` / `assistant_message` 事件，再写入数据库；`tool_call` 与对应 `tool_result` 成对原子写入，浏览器断开时不会留下未送达或不成对的 tool/assistant 行。非流式 `/api/chat/send` 直接写入。
 > - 多工具与轮次边界：同一轮返回多个工具调用时，写入数据库仍按每次调用两条记录，并在 tool_call/tool_result JSON 中携带 `turnId`；拼装下一轮 LLM 上下文时按 `turnId` 分组，同一轮合并为一条带多个 `tool_calls` 的 assistant 消息 + 多条 tool 结果，不同轮次保持独立，符合 OpenAI/DeepSeek 协议。旧数据无 `turnId` 时回退为连续记录分组。
 > - thinking 计时状态、未完成 assistant 文本不落库；连接中断时保留已完整写入的 user 消息和已成功送达的工具调用记录。
+> - `role=assistant` 的历史行若 `content` 形如 `{"type":"tool_call",...}`，是工具调用载荷而非自然语言回答，前端应按 `type` 字段分流渲染。
 >
 > **v0.0.5 配额说明**：
 > - 每个已认证用户每分钟最多 5 次聊天，每天（Asia/Shanghai）最多 100 次；`/api/chat/send` 与 `/api/chat/stream` 每次请求只计一次。
@@ -85,7 +92,7 @@
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
 | GET | `/api/college-credit-rules` | 已登录 | 规则列表；可选过滤参数 `college`、`creditType`(graduation/recommendation)、`category` |
-| GET | `/api/college-credit-rules/{id}` | 已登录 | 规则详情 |
+| GET | `/api/college-credit-rules/{id}` | 已登录 | 规则详情；不存在返回 400 纯文本 `加分规则不存在` |
 | POST | `/api/college-credit-rules` | ADMIN | 新建规则（校验 college/creditType/category/credits） |
 
 ## 加分记录 (Credit Activities)
@@ -93,23 +100,25 @@
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
 | GET | `/api/credit-activities` | 已登录 | 当前用户的加分记录列表 |
-| GET | `/api/credit-activities/{id}` | 已登录 | 加分记录详情（仅本人） |
-| POST | `/api/credit-activities` | 已登录 | 新建加分记录（归属当前用户） |
-| PUT | `/api/credit-activities/{id}` | 已登录 | 更新加分记录（仅本人；`verified` 由服务端控制） |
-| DELETE | `/api/credit-activities/{id}` | 已登录 | 删除加分记录（仅本人） |
+| GET | `/api/credit-activities/{id}` | 已登录 | 加分记录详情（仅本人）；不存在/非本人返回 400 纯文本 |
+| POST | `/api/credit-activities` | 已登录 | 新建加分记录（归属当前用户；`verified` 强制为 0，`ruleId` 若提供必须存在） |
+| PUT | `/api/credit-activities/{id}` | 已登录 | 更新加分记录（仅本人；`verified` 由服务端控制，用户不可改） |
+| DELETE | `/api/credit-activities/{id}` | 已登录 | 删除加分记录（仅本人），返回 `{"message":"加分记录已删除"}` |
 
 ## 成长资源库 (Resources)
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| GET | `/api/resources` | 已登录 | 资源列表；可选 `type` 过滤（`competition` 或 `course`），不带参数返回全部 |
-| GET | `/api/resources/{id}` | 已登录 | 资源详情：优先按业务键 `resource_id`（如 `competition_001`）匹配，纯数字回退物理主键 |
+| GET | `/api/resources` | 已登录 | 资源列表；可选 `type` 过滤（`competition` 或 `course`），不带参数返回全部；`type` 非法返回 400 纯文本 |
+| GET | `/api/resources/{id}` | 已登录 | 资源详情：优先按业务键 `resource_id`（如 `competition_001`）匹配，纯数字回退物理主键；不存在返回 404 纯文本 |
 
 ## RAG 检索切片 (RAG Chunks)
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
 | GET | `/api/rag-chunks` | 已登录 | 切片列表；可选 `relatedResourceId` 过滤（关联 `resources.resource_id` 业务键），不带参数返回全部 |
+
+> ⚠️ **数据暴露面**：该端点返回 `RagChunk` 实体全字段，**包含完整向量 `embeddingJson`**，且对任意已登录用户开放。管理控制台出于同一考虑刻意只返回 `embeddingJsonLength` 而不返回向量，说明该字段被团队视为不应外泄的运维数据 —— 建议后端在此端点剔除 `embeddingJson`，或前端不使用该字段。详见 [`API_GUIDE.md`](./API_GUIDE.md) 第 9.2 节。
 
 ## 能力标签字典 (Capability Tags)
 
@@ -121,7 +130,7 @@
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| GET | `/api/capability-reference` | 已登录 | 字典行列表；`section` 必填时仅支持：`tags_to_merge`、`skill_mapping`、`skill_profiles`、`role_profiles`、`major_categories`、`_meta`；不带参数返回全部 |
+| GET | `/api/capability-reference` | 已登录 | 字典行列表；`section` **可选**（不是必填），不带参数返回全部；一旦提供则仅支持：`tags_to_merge`、`skill_mapping`、`skill_profiles`、`role_profiles`、`major_categories`、`_meta`，否则 400 纯文本 |
 
 ## 管理控制台 (Admin Console, v0.0.6)
 
@@ -155,7 +164,7 @@
 | GET | `/api/admin/capability-reference/{id}` | 字典条目详情 |
 | GET | `/api/admin/chat-usage` | `chat_usage_daily` 每日计数；筛选 `userId`/`usageDate`/`dateFrom`/`dateTo` |
 
-**通用参数**：`page`（≥1）、`pageSize`（1-200）、`sort`（每个数据集独立白名单）、`dir`（`asc`/`desc`）；未在数据集白名单内的参数一律 400 `UNKNOWN_PARAMETER`。
+**通用参数**：`page`（≥1，上限 100000）、`pageSize`（1-200）、`sort`（每个数据集独立白名单）、`dir`（`asc`/`desc`）；未在数据集白名单内的参数一律 400 `UNKNOWN_PARAMETER`。
 **限流**：每个管理员每分钟最多 `lifecomposer.admin.console-queries-per-minute`（默认 240）次查询，超限 429 `ADMIN_RATE_LIMIT`；查询使用 `lifecomposer.admin.console-query-timeout-seconds`（默认 10s）JDBC statement timeout。
 **审计**：成功查询记录 `AUDIT event=admin_query`（admin/dataset/filters/total/returned/elapsedMs），被拒查询记录 `AUDIT event=admin_query_rejected`（admin/uri/reason）；两者都不记录被查看的正文内容。
 
@@ -182,6 +191,8 @@
 > 实现：`Security/SessionCredential` + `Security/SessionCredentialGuardFilter`（挂在 Spring Security 过滤器链的 `AuthorizationFilter` 之前）+ `UserService.setTemporaryPassword/changeOwnPassword`。
 >
 > 密码本身仍只以 BCrypt 哈希存储；`temp_password_expires_at` 的值绝不会回显。
+>
+> 注意：上表的 `401` 与「未登录访问受保护端点的 `403`」是两回事 —— 前者由会话守卫在**已认证会话**上主动返回并带 `{"error":"..."}` 体，后者由过滤器链在**无认证**时返回。
 
 ### 并发安全的管理员保护（v0.0.6 审查整改）
 
@@ -229,31 +240,39 @@
 
 ## CSRF 防护（v0.0.5）
 
-- 服务端使用 `CookieCsrfTokenRepository`，通过可读的 `XSRF-TOKEN` Cookie + `GET /api/csrf` 暴露 token。
+- 服务端使用 `CookieCsrfTokenRepository`，通过可读的 `XSRF-TOKEN` Cookie + `GET /api/csrf` 暴露 token；请求头名为 `X-XSRF-TOKEN`（`XsrfHeaderAliasFilter` 会把它映射到 Spring Security 默认的 `X-CSRF-TOKEN`）。
 - 前端统一加载 `/csrf.js`，包装 `window.fetch`，对 `POST` / `PUT` / `DELETE` 自动发送 `X-XSRF-TOKEN` 头。
 - `GET` / `HEAD` / `OPTIONS` 不需要 CSRF token；其余状态变更请求缺少或携带不匹配 token 时返回 403。
+- **该规则与「是否为公开端点」无关**：`POST /api/users/register`、`POST /api/users/login`、`POST /api/feedback/submit`、`POST /api/feedback/system-error` 虽然是公开端点，仍然必须携带有效 token。
 - Session Cookie 设置 `HttpOnly=true`、`SameSite=Lax`；HTTPS 部署时设置 `SESSION_COOKIE_SECURE=true` / `CSRF_COOKIE_SECURE=true`。`XSRF-TOKEN` 需要被同源 JS 读取，因此不设为 HttpOnly。
-- CORS 允许来源通过 `app.security.allowed-origins` 显式配置，禁止使用 `*` 搭配 credentials。
+- CORS 允许来源通过 `app.security.allowed-origins` 显式配置，禁止使用 `*` 搭配 credentials；默认值为 `http://localhost:*`、`http://127.0.0.1:*`、`https://localhost:*`、`https://*.trycloudflare.com`（最后一项为调试用的 Cloudflare 临时隧道通配子域）。
 - 登录成功后重建 Session，防止 Session Fixation。
 
 ## 错误响应约定（v0.0.7 归属整理）
 
 > v0.0.7 整理异常的**处理归属**，除下列显式变化外不改变既有状态码或响应体格式；生产代码的状态码统一使用 `HttpStatus` 命名常量。
 
+- **未认证（无有效会话）**：受保护端点在 Spring Security 过滤器链即被拦截，因未配置自定义 `AuthenticationEntryPoint`，返回 **403**（Spring Boot 默认错误体 `{timestamp,status,error,path}`，`server.error.include-message=never` 故无 message）。这是**最常见**的"未登录"表现，前端拦截器不要只判 401。
 - **客户端输入错误**（`ValidationExceptionHandler`，`@Order(HIGHEST_PRECEDENCE)`）：Bean Validation → `400` + 字段到消息的 JSON map；`ConstraintViolationException` → `400 "Invalid input"`；类型转换失败 → `400 "Method argument type mismatch"`；缺少必填参数 → `400 "Missing servlet request parameter."`；非法/缺失 JSON body → `400 "请求体缺失或格式不正确"`；不支持的媒体类型 → `400 "Unsupported media type"`。这些请求**不**写入系统错误反馈。
-- **Bot 请求**：空 User-Agent 或爬虫关键词 → `403 "Forbidden"`。该策略由两个 advice 共用的 `BotRequestGuard` 执行，覆盖全部异常处理器（输入错误、路由错误、客户端断开、全局兜底），因此即使请求先触发非法 JSON、缺少参数或类型转换等输入错误，也仍然是 403 而不会降级为 400。
+- **Bot 请求**：空 User-Agent 或爬虫关键词 → `403 "Forbidden"`。该策略由两个 advice 共用的 `BotRequestGuard` 执行，覆盖全部异常处理器（输入错误、路由错误、客户端断开、全局兜底），因此即使请求先触发非法 JSON、缺少参数或类型转换等输入错误，也仍然是 403 而不会降级为 400。**联调时请始终携带 `User-Agent`。**
 - **路由与服务端错误**（`GlobalExceptionHandler`，`@Order(LOWEST_PRECEDENCE)`）：未知路径对 `/api/**` 返回 404（无 body），页面请求 302 重定向到 `/error/{code}`；不支持的 HTTP method 对 API 维持既有 404 契约；未知服务器异常返回 `500 "Internal Server Error"` 并写入系统 feedback（反馈写入失败不覆盖原错误）。
 - **客户端断开**：`ClientAbortException` → `499 Client Closed Request`，响应体 `"ClientAbortException"`；`AsyncRequestNotUsableException` → 维持 `500 "Internal Server Error"`。两者都被视为流生命周期事件（debug 日志、不写 feedback），且不再产生空 200 的“假成功”。`499` 是事实标准状态码，客户端已断开时不可见，但代理与访问日志可据此区分断开与成功/业务错误。
 - **管理端**：`/api/admin/**` 继续由 `AdminController` 局部处理，保持 `{"error":"<CODE>","message":"..."}` 与审计行为（`INVALID_PARAMETER` / `UNKNOWN_PARAMETER` / `NOT_FOUND` / `ADMIN_RATE_LIMIT` / `ADMIN_QUERY_FAILED`）。
+- **响应体形态**：返回 `Map`/DTO/`List` 的端点是 JSON；返回 `String` 的端点（如 `注册成功`、`登出成功`、`权限不足`、`用户档案不存在`）是**纯文本**，不要直接 `JSON.parse`。
 
 ## 认证与权限说明
 
-- **公开端点**：`/api/users/register`, `/api/users/login`, `/api/csrf`, `/api/feedback/submit`, `/api/feedback/system-error`, `/api/qa/health`
+- **公开端点**：`/api/users/register`, `/api/users/login`, `/api/csrf`, `/api/feedback/submit`, `/api/feedback/system-error`, `/api/qa/health`（**其中 4 个 POST 仍需 CSRF token**）
 - **需要 ADMIN 角色**：`/api/admin/**`（v0.0.6 管理控制台）, `/admin` 与 `/admin/**`（v0.0.6 管理页面）, `/api/users/all`, `/api/users/*/grant-admin`, `/api/users/*/revoke-admin`, `/api/users/*/ban`, `/api/users/*/unban`, `/api/users/admin/**`, `/api/feedback/all`, `/api/feedback/type/**`, `/api/feedback/*/resolve`, `POST /api/college-credit-rules`
 - **v0.0.6 变更**：`POST /api/users/admin/reset-password/{userId}` 下发带状态与有效期的临时密码且不回显，用户首次登录必须通过 `POST /api/users/password` 修改；撤销或封禁最后一个可登录管理员返回 409，保证系统始终存在可登录管理员
 - **v0.0.6 会话失效**：密码变更会递增 `users.credential_version`，服务端会立即销毁用旧密码建立的会话（401 `SESSION_EXPIRED`）；带临时密码状态的会话只能访问修改密码相关端点（401 `PASSWORD_CHANGE_REQUIRED`）
 - **需要认证**：`/api/users/password`（v0.0.6 自助修改密码）, `/api/users/current`, `/api/users/logout`, `/api/profiles/**`, `/api/planning/**`, `/api/qa/ask`, `/api/chat/**`, `/api/college-credit-rules/**`（除 POST 管理外）, `/api/credit-activities/**`, `/api/resources/**`, `/api/rag-chunks/**`, `/api/capability-tags/**`, `/api/capability-reference/**`, `/front/**`
+- **未认证的状态码**：以上受保护端点在没有有效会话时返回 **403**（Spring Security 过滤器链默认行为），**不是 401**；401 只由会话守卫产生（见上）
 - **v0.0.3 变更**：原目标管理端点相关认证匹配已随 goals 表一并移除；新增 6 个 `/api` 前缀的认证配置（college-credit-rules / credit-activities / resources / rag-chunks / capability-tags / capability-reference）
 - **认证机制**：JSESSIONID Cookie 传递认证状态
-- **CORS 限制**：默认本地开发环境（`http://localhost:*`, `http://127.0.0.1:*`, `https://localhost:*`），可通过 `app.security.allowed-origins` 显式覆盖
+- **CORS 限制**：默认本地开发环境（`http://localhost:*`, `http://127.0.0.1:*`, `https://localhost:*`）并额外允许调试用的 Cloudflare 临时隧道（`https://*.trycloudflare.com`），可通过 `app.security.allowed-origins` 显式覆盖
 - **限流与额度**：注册（每 IP/分钟）、登录（连续失败临时锁定）、聊天（每用户 5/分钟 + 100/天），详见对应章节
+
+---
+
+> 更详细的字段级说明（请求参数表、成功响应样例、全部错误码、Agent 工具入参出参）见 [`API_GUIDE.md`](./API_GUIDE.md)。
