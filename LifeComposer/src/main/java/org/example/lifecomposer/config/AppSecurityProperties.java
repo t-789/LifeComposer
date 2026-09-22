@@ -15,11 +15,16 @@ import java.util.List;
 @Setter
 public class AppSecurityProperties {
 
-    /** Explicit CORS origins; never use "*" with credentials. */
+    /**
+     * Explicit CORS origins; never use "*" with credentials. The last entry is a
+     * wildcard subdomain pattern covering Cloudflare Quick Tunnels
+     * (https://&lt;random&gt;.trycloudflare.com) used while debugging.
+     */
     private List<String> allowedOrigins = new ArrayList<>(List.of(
             "http://localhost:*",
             "http://127.0.0.1:*",
-            "https://localhost:*"
+            "https://localhost:*",
+            "https://*.trycloudflare.com"
     ));
 
     /** Mark XSRF-TOKEN cookie Secure when the deployment is HTTPS-only. */
