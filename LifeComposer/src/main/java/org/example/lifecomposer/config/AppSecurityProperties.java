@@ -37,7 +37,7 @@ public class AppSecurityProperties {
     private int chatPerDay = 100;
 
     /** Maximum generated tokens for /api/chat/*; larger client values are truncated. */
-    private int chatMaxOutputTokens = 1024;
+    private int chatMaxOutputTokens = 2048;
 
     /** SSE emitter timeout. */
     private long sseTimeoutMillis = 300_000L;
