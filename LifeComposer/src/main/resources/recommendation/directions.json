@@ -1,0 +1,50 @@
+[
+  {
+    "id": "programming_foundation",
+    "name": "编程基础与项目入门",
+    "description": "先补齐编程基础和第一个可展示的项目经历，适合零基础或刚入门的学生。",
+    "targetTags": ["编程基础", "项目经验"],
+    "entryTags": ["编程基础"],
+    "requiredHoursPerWeek": 4,
+    "difficulty": "easy",
+    "preparationMonths": 2,
+    "keywords": ["编程", "项目", "入门", "打基础", "代码"],
+    "resourceIds": ["course_001", "course_006", "course_002"]
+  },
+  {
+    "id": "algorithm_contest",
+    "name": "算法竞赛",
+    "description": "以蓝桥杯、ACM、CCSP 等算法竞赛为目标，训练数据结构与算法能力。",
+    "targetTags": ["算法与数据结构", "编程基础"],
+    "entryTags": ["编程基础"],
+    "requiredHoursPerWeek": 8,
+    "difficulty": "medium",
+    "preparationMonths": 3,
+    "keywords": ["算法", "竞赛", "刷题", "编程", "数据结构"],
+    "resourceIds": ["course_002", "competition_002", "competition_003", "competition_010"]
+  },
+  {
+    "id": "data_analysis",
+    "name": "数据分析与数学建模",
+    "description": "面向数学建模、数据分析类竞赛和课程，强调数据、建模与论文写作。",
+    "targetTags": ["数据分析", "数学建模", "编程基础", "文档写作"],
+    "entryTags": ["编程基础"],
+    "requiredHoursPerWeek": 6,
+    "difficulty": "medium",
+    "preparationMonths": 3,
+    "keywords": ["数据分析", "数学建模", "数据", "建模", "统计"],
+    "resourceIds": ["course_003", "course_004", "course_005", "competition_001"]
+  },
+  {
+    "id": "ai_tools",
+    "name": "AI 工具应用",
+    "description": "用 AI 工具与大模型能力解决实际问题，适合希望快速做出应用原型的同学。",
+    "targetTags": ["AI 工具应用", "编程基础"],
+    "entryTags": ["编程基础"],
+    "requiredHoursPerWeek": 3,
+    "difficulty": "easy",
+    "preparationMonths": 1,
+    "keywords": ["AI", "人工智能", "大模型", "AIGC", "工具", "应用"],
+    "resourceIds": ["course_005", "competition_011"]
+  }
+]

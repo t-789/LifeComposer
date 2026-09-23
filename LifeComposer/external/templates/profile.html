@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的成长画像</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: #f2f5f3; color: #22312a; }
+        .page { max-width: 860px; margin: 0 auto; padding: 24px 16px 60px; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        h1 { font-size: 22px; margin: 0; }
+        .muted { color: #6b7c73; font-size: 13px; }
+        .card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field.full { grid-column: 1 / -1; }
+        label { font-size: 13px; font-weight: 600; }
+        input, textarea { border: 1px solid #cfd8d3; border-radius: 8px; padding: 9px 10px; font-family: inherit; font-size: 14px; }
+        textarea { min-height: 84px; resize: vertical; }
+        .hint { font-size: 12px; color: #7b8a82; }
+        .actions { display: flex; gap: 12px; align-items: center; margin-top: 18px; }
+        button { background: #2E7D32; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; cursor: pointer; font-size: 14px; }
+        button.secondary { background: #eceff1; color: #37474f; }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        .banner { border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 14px; display: none; }
+        .banner.error { display: block; background: #fdecea; color: #b3261e; }
+        .banner.success { display: block; background: #e8f5e9; color: #1b5e20; }
+        @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<div class="page">
+    <header>
+        <div>
+            <h1>我的成长画像</h1>
+            <div class="muted">画像是结构化事实；这里填写的内容会直接写入正式画像。</div>
+        </div>
+        <a href="/front/chat_test">返回对话</a>
+    </header>
+
+    <div id="banner" class="banner"></div>
+
+    <form id="profileForm" class="card">
+        <div class="grid">
+            <div class="field">
+                <label for="college">学院</label>
+                <input id="college" name="college" placeholder="如：计算机学院">
+            </div>
+            <div class="field">
+                <label for="major">专业</label>
+                <input id="major" name="major" placeholder="如：计算机科学与技术">
+            </div>
+            <div class="field">
+                <label for="grade">年级</label>
+                <input id="grade" name="grade" placeholder="如：大一 / 2024">
+            </div>
+            <div class="field">
+                <label for="studentId">学号（选填）</label>
+                <input id="studentId" name="studentId" placeholder="仅自己可见">
+            </div>
+            <div class="field full">
+                <label for="availableTime">每周可投入时间</label>
+                <input id="availableTime" name="availableTime" placeholder="如：6 hours/week">
+            </div>
+            <div class="field">
+                <label for="skills">技能</label>
+                <textarea id="skills" placeholder="每行一项，如：&#10;C语言&#10;Python基础"></textarea>
+            </div>
+            <div class="field">
+                <label for="interests">兴趣</label>
+                <textarea id="interests" placeholder="每行一项，如：&#10;AI&#10;数据分析"></textarea>
+            </div>
+            <div class="field">
+                <label for="goals">目标</label>
+                <textarea id="goals" placeholder="每行一项，如：&#10;了解竞赛&#10;积累项目经历"></textarea>
+            </div>
+            <div class="field">
+                <label for="experiences">经历</label>
+                <textarea id="experiences" placeholder="每行一项；也可写 JSON 对象，如：&#10;{&quot;type&quot;:&quot;竞赛&quot;,&quot;name&quot;:&quot;蓝桥杯&quot;}"></textarea>
+            </div>
+            <div class="field full">
+                <label for="preferences">偏好（选填，JSON 对象）</label>
+                <textarea id="preferences" placeholder='{"learning_style":"视频"}'></textarea>
+                <div class="hint">必须填写合法 JSON 对象，否则不会保存。</div>
+            </div>
+        </div>
+        <div class="actions">
+            <button type="submit" id="saveBtn">保存画像</button>
+            <button type="button" class="secondary" id="reloadBtn">重新加载</button>
+            <span class="muted" id="versionLabel"></span>
+        </div>
+    </form>
+</div>
+
+<script src="/csrf.js"></script>
+<script>
+    var currentVersion = 0;
+
+    function showBanner(kind, text) {
+        var banner = document.getElementById('banner');
+        banner.className = 'banner ' + kind;
+        banner.textContent = text;
+    }
+
+    function hideBanner() {
+        document.getElementById('banner').className = 'banner';
+    }
+
+    function splitLines(text) {
+        if (!text) return [];
+        var seen = {};
+        var out = [];
+        var parts = text.split('\n');
+        for (var i = 0; i < parts.length; i++) {
+            var value = parts[i].trim();
+            if (!value || seen[value]) continue;
+            seen[value] = true;
+            out.push(value);
+        }
+        return out;
+    }
+
+    function parseExperiences(text) {
+        var lines = splitLines(text);
+        var out = [];
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line.charAt(0) === '{') {
+                try { out.push(JSON.parse(line)); } catch (e) { out.push(line); }
+            } else {
+                out.push(line);
+            }
+        }
+        return out;
+    }
+
+    function joinLines(json) {
+        if (!json) return '';
+        try {
+            var parsed = JSON.parse(json);
+            if (!Array.isArray(parsed)) return '';
+            var lines = [];
+            for (var i = 0; i < parsed.length; i++) {
+                lines.push(typeof parsed[i] === 'string' ? parsed[i] : JSON.stringify(parsed[i]));
+            }
+            return lines.join('\n');
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function fill(profile) {
+        document.getElementById('college').value = profile.college || '';
+        document.getElementById('major').value = profile.major || '';
+        document.getElementById('grade').value = profile.grade || '';
+        document.getElementById('studentId').value = profile.studentId || '';
+        document.getElementById('availableTime').value = profile.availableTime || '';
+        document.getElementById('skills').value = joinLines(profile.skillsJson);
+        document.getElementById('interests').value = joinLines(profile.interestsJson);
+        document.getElementById('goals').value = joinLines(profile.goals);
+        document.getElementById('experiences').value = joinLines(profile.experiencesJson);
+        document.getElementById('preferences').value = profile.preferencesJson || '';
+        currentVersion = profile.version === undefined || profile.version === null ? 0 : profile.version;
+        document.getElementById('versionLabel').textContent = '画像版本 v' + currentVersion;
+    }
+
+    async function loadProfile() {
+        hideBanner();
+        try {
+            var response = await fetch('/api/profiles/me', { credentials: 'include' });
+            if (response.status === 404) {
+                currentVersion = 0;
+                document.getElementById('versionLabel').textContent = '尚未创建画像';
+                return;
+            }
+            if (!response.ok) {
+                showBanner('error', '读取画像失败（HTTP ' + response.status + '）');
+                return;
+            }
+            fill(await response.json());
+        } catch (e) {
+            showBanner('error', '网络错误，无法读取画像');
+        }
+    }
+
+    function buildPayload() {
+        var preferences = document.getElementById('preferences').value.trim();
+        if (preferences) {
+            try {
+                var parsed = JSON.parse(preferences);
+                if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+                    throw new Error('not object');
+                }
+            } catch (e) {
+                showBanner('error', '偏好必须是合法的 JSON 对象');
+                return null;
+            }
+        }
+        return {
+            college: document.getElementById('college').value.trim() || null,
+            major: document.getElementById('major').value.trim() || null,
+            grade: document.getElementById('grade').value.trim() || null,
+            studentId: document.getElementById('studentId').value.trim() || null,
+            availableTime: document.getElementById('availableTime').value.trim() || null,
+            skillsJson: JSON.stringify(splitLines(document.getElementById('skills').value)),
+            interestsJson: JSON.stringify(splitLines(document.getElementById('interests').value)),
+            goals: JSON.stringify(splitLines(document.getElementById('goals').value)),
+            experiencesJson: JSON.stringify(parseExperiences(document.getElementById('experiences').value)),
+            preferencesJson: preferences || null,
+            version: currentVersion
+        };
+    }
+
+    async function saveProfile(event) {
+        event.preventDefault();
+        hideBanner();
+        var payload = buildPayload();
+        if (!payload) return;
+
+        var saveBtn = document.getElementById('saveBtn');
+        saveBtn.disabled = true;
+        try {
+            var response = await fetch('/api/profiles/me', {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            var body = await response.json().catch(function () { return {}; });
+            if (response.status === 409) {
+                showBanner('error', '画像已被其他操作更新，请点击“重新加载”后重试。');
+                return;
+            }
+            if (!response.ok) {
+                showBanner('error', body.message || body.error || ('保存失败（HTTP ' + response.status + '）'));
+                return;
+            }
+            fill(body);
+            showBanner('success', '画像已保存（版本 v' + currentVersion + '）。');
+        } catch (e) {
+            showBanner('error', '网络错误，保存失败');
+        } finally {
+            saveBtn.disabled = false;
+        }
+    }
+
+    document.getElementById('profileForm').addEventListener('submit', saveProfile);
+    document.getElementById('reloadBtn').addEventListener('click', loadProfile);
+    loadProfile();
+</script>
+</body>
+</html>

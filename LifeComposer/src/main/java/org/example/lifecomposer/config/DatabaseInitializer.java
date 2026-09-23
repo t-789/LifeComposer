@@ -14,8 +14,11 @@ import org.example.lifecomposer.Repository.CollegeCreditRuleRepository;
 import org.example.lifecomposer.Repository.CreditActivityRepository;
 import org.example.lifecomposer.Repository.FeedbackRepository;
 import org.example.lifecomposer.Repository.PlanningHistoryRepository;
+import org.example.lifecomposer.Repository.ProfileChangeCandidateRepository;
 import org.example.lifecomposer.Repository.RagChunkRepository;
+import org.example.lifecomposer.Repository.RecommendationFeedbackRepository;
 import org.example.lifecomposer.Repository.ResourceRepository;
+import org.example.lifecomposer.Repository.UserCapabilityStateRepository;
 import org.example.lifecomposer.Repository.UserProfileRepository;
 import org.example.lifecomposer.Repository.UserRepository;
 import org.example.lifecomposer.Service.AdminBootstrapService;
@@ -51,6 +54,9 @@ public class DatabaseInitializer {
     private final CapabilityTagRepository capabilityTagRepository;
     private final CapabilityReferenceRepository capabilityReferenceRepository;
     private final ChatUsageRepository chatUsageRepository;
+    private final ProfileChangeCandidateRepository profileChangeCandidateRepository;
+    private final UserCapabilityStateRepository userCapabilityStateRepository;
+    private final RecommendationFeedbackRepository recommendationFeedbackRepository;
     private final AppSecurityProperties securityProperties;
     private final AdminBootstrapService adminBootstrapService;
     private final boolean importMode;
@@ -68,6 +74,9 @@ public class DatabaseInitializer {
                                CapabilityTagRepository capabilityTagRepository,
                                CapabilityReferenceRepository capabilityReferenceRepository,
                                ChatUsageRepository chatUsageRepository,
+                               ProfileChangeCandidateRepository profileChangeCandidateRepository,
+                               UserCapabilityStateRepository userCapabilityStateRepository,
+                               RecommendationFeedbackRepository recommendationFeedbackRepository,
                                AppSecurityProperties securityProperties,
                                AdminBootstrapService adminBootstrapService,
                                Environment environment) {
@@ -84,6 +93,9 @@ public class DatabaseInitializer {
         this.capabilityTagRepository = capabilityTagRepository;
         this.capabilityReferenceRepository = capabilityReferenceRepository;
         this.chatUsageRepository = chatUsageRepository;
+        this.profileChangeCandidateRepository = profileChangeCandidateRepository;
+        this.userCapabilityStateRepository = userCapabilityStateRepository;
+        this.recommendationFeedbackRepository = recommendationFeedbackRepository;
         this.securityProperties = securityProperties;
         this.adminBootstrapService = adminBootstrapService;
         this.importMode = environment.getProperty("lifecomposer.import.mode", Boolean.class, false);
@@ -101,11 +113,15 @@ public class DatabaseInitializer {
         creditActivityRepository.createTableIfNeeded();
         planningHistoryRepository.createTableIfNeeded();
         chatMessageRepository.createChatMessageTableIfNeeded();
+        chatMessageRepository.migrateSchema();
         resourceRepository.createTableIfNeeded();
         ragChunkRepository.createTableIfNeeded();
         capabilityTagRepository.createTableIfNeeded();
         capabilityReferenceRepository.createTableIfNeeded();
         chatUsageRepository.createTableIfNeeded();
+        profileChangeCandidateRepository.createTableIfNeeded();
+        userCapabilityStateRepository.createTableIfNeeded();
+        recommendationFeedbackRepository.createTableIfNeeded();
 
         String usageCutoff = LocalDate.now(ZoneId.of(securityProperties.getChatUsageZone()))
                 .minusDays(securityProperties.getChatUsageRetentionDays()).toString();

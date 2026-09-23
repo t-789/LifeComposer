@@ -22,6 +22,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -34,6 +35,7 @@ import java.util.concurrent.ExecutorService;
 public class ChatController {
 
     private static final Logger LOG = LogManager.getLogger(ChatController.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final ChatService chatService;
     private final UserRepository userRepository;
@@ -192,6 +194,11 @@ public class ChatController {
         }
 
         @Override
+        public void onPromptVersions(java.util.Map<String, String> versions) {
+            send(emitter, "prompt_versions", Map.of("versions", versions));
+        }
+
+        @Override
         public void onThinkingStart(Instant startedAt) {
             send(emitter, "thinking_start", Map.of("startedAt", startedAt.toString()));
         }
@@ -237,6 +244,18 @@ public class ChatController {
         }
 
         @Override
+        public void onProfileChangeProposal(String proposalsJson) {
+            send(emitter, "profile_change_proposal", Map.of("proposals", parseJson(proposalsJson)));
+        }
+
+        @Override
+        public void onAwaitingConfirmation(String proposalsJson) {
+            send(emitter, "awaiting_confirmation", Map.of(
+                    "status", "awaiting_confirmation",
+                    "proposals", parseJson(proposalsJson)));
+        }
+
+        @Override
         public void onError(String code, String message) {
             send(emitter, "error", Map.of("code", code, "message", message));
         }
@@ -244,6 +263,17 @@ public class ChatController {
         @Override
         public void onDone() {
             send(emitter, "done", Map.of());
+        }
+    }
+
+    private Object parseJson(String json) {
+        if (json == null || json.isBlank()) {
+            return java.util.List.of();
+        }
+        try {
+            return MAPPER.readTree(json);
+        } catch (Exception e) {
+            return json;
         }
     }
 

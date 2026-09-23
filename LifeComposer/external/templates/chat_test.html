@@ -252,6 +252,116 @@
         .process-line.tool { color: #6A1B9A; }
         .process-line.error { color: #C62828; }
 
+        /* v0.1 M7: left chat + right debug panel */
+        .app-shell {
+            display: flex;
+            width: 100%;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+        }
+
+        .app-shell .chat-container {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .header-link {
+            color: #fff;
+            text-decoration: none;
+            font-size: 12px;
+            margin-right: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.6);
+        }
+
+        /* Confirmation cards sit directly above the input bar, per the v0.1 UX note. */
+        .confirmation-area {
+            background: #FFF8E1;
+            border-top: 1px solid #FFE082;
+            padding: 8px max(var(--page-pad), calc((100% - var(--content-max)) / 2));
+            max-height: 42vh;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+
+        .confirmation-area:empty {
+            display: none;
+        }
+
+        .confirm-card {
+            background: #fff;
+            border: 1px solid #FFD54F;
+            border-left: 4px solid #F9A825;
+            border-radius: 8px;
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+
+        .confirm-card-title { font-weight: 600; color: #8D6E00; margin-bottom: 4px; }
+        .confirm-card-change { color: #333; margin-bottom: 3px; word-break: break-word; }
+        .confirm-card-rationale { color: #666; font-size: 12px; margin-bottom: 3px; }
+        .confirm-card-meta { color: #999; font-size: 11px; margin-bottom: 5px; }
+        .confirm-card-reason {
+            width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 4px 6px;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+        .confirm-card-actions { display: flex; gap: 8px; }
+        .confirm-card-actions button {
+            border: none;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .confirm-btn { background: #2E7D32; color: #fff; }
+        .reject-btn { background: #ECEFF1; color: #37474F; }
+        .confirm-card-result { margin-top: 4px; color: #555; font-size: 12px; }
+
+        .debug-panel {
+            width: 360px;
+            flex: 0 0 360px;
+            background: #1e272e;
+            color: #d2dae2;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+
+        .debug-title {
+            padding: 10px 12px;
+            font-size: 14px;
+            font-weight: 600;
+            background: #111820;
+            color: #fff;
+        }
+
+        .debug-status {
+            padding: 4px 12px 8px;
+            color: #7bed9f;
+            font-family: 'SF Mono', Monaco, Consolas, monospace;
+        }
+
+        .debug-section { border-top: 1px solid #2f3b45; padding: 8px 12px; }
+        .debug-section h3 { margin: 0 0 6px; font-size: 12px; color: #81ecec; font-weight: 600; }
+        .debug-body { display: flex; flex-direction: column; gap: 3px; }
+        .debug-line { word-break: break-word; line-height: 1.4; }
+        .debug-key { color: #b2bec3; }
+        .debug-line.tool-call { color: #ffeaa7; }
+        .debug-line.tool-result.ok { color: #55efc4; }
+        .debug-line.tool-result.error { color: #ff7675; }
+        .debug-line.sse { color: #74b9ff; }
+
+        @media (max-width: 900px) {
+            .app-shell { flex-direction: column; }
+            .debug-panel { width: auto; flex: 0 0 auto; max-height: 38vh; }
+        }
+
         /* 窄屏（手机）适配：收紧边距，气泡占更宽比例 */
         @media (max-width: 480px) {
             :root {
@@ -274,20 +384,65 @@
     </style>
 </head>
 <body>
-    <div class="chat-container">
-        <div class="chat-header">
-            <span>AI 对话测试</span>
-            <button class="clear-btn" onclick="clearContext()">清除上下文</button>
+    <div class="app-shell">
+        <div class="chat-container">
+            <div class="chat-header">
+                <span>AI 对话测试</span>
+                <div>
+                    <a class="header-link" href="/front/profile">我的画像</a>
+                    <button class="clear-btn" onclick="clearContext()">清除上下文</button>
+                </div>
+            </div>
+            <div class="chat-messages" id="messageArea">
+            </div>
+            <div class="confirmation-area" id="confirmationArea"></div>
+            <div class="chat-input-bar">
+                <textarea id="messageInput" rows="1" placeholder="输入消息..."
+                          onkeydown="onInputKeydown(event)" oninput="autoResize(this)"></textarea>
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">发送</button>
+            </div>
         </div>
-        <div class="chat-messages" id="messageArea">
-        </div>
-        <div class="chat-input-bar">
-            <textarea id="messageInput" rows="1" placeholder="输入消息..."
-                      onkeydown="onInputKeydown(event)" oninput="autoResize(this)"></textarea>
-            <button class="send-btn" id="sendBtn" onclick="sendMessage()">发送</button>
-        </div>
+        <aside class="debug-panel" id="debugPanel">
+            <div class="debug-title">画像与运行监控</div>
+            <div class="debug-status" id="debugStatus">就绪</div>
+            <section class="debug-section">
+                <h3>当前画像</h3>
+                <div id="debugProfile" class="debug-body"></div>
+            </section>
+            <section class="debug-section">
+                <h3>画像候选</h3>
+                <div id="debugCandidates" class="debug-body"></div>
+            </section>
+            <section class="debug-section">
+                <h3>能力标签</h3>
+                <div id="debugCapabilities" class="debug-body"></div>
+            </section>
+            <section class="debug-section">
+                <h3>推荐方向</h3>
+                <div id="debugRecommendations" class="debug-body"></div>
+            </section>
+            <section class="debug-section">
+                <h3>路径摘要</h3>
+                <div id="debugPathSummary" class="debug-body"></div>
+            </section>
+            <section class="debug-section">
+                <h3>工具调用</h3>
+                <div id="debugTools" class="debug-body"></div>
+            </section>
+            <section class="debug-section">
+                <h3>RAG 命中</h3>
+                <div id="debugRag" class="debug-body"></div>
+            </section>
+            <section class="debug-section">
+                <h3>SSE 事件</h3>
+                <div id="debugEvents" class="debug-body"></div>
+            </section>
+        </aside>
     </div>
     <script src="/csrf.js"></script>
+    <script src="/sse-client.js"></script>
+    <script src="/confirmation-cards.js"></script>
+    <script src="/debug-panel.js"></script>
     <script>
         // Markdown + KaTeX rendering pipeline
         function renderAssistantMessage(text) {
@@ -373,7 +528,38 @@
 
         window.onload = function() {
             loadHistory();
+            initDebugPanel();
         };
+
+        function initDebugPanel() {
+            if (!window.LifeComposerDebug || !window.LifeComposerConfirmation) return;
+            LifeComposerDebug.init({
+                status: document.getElementById("debugStatus"),
+                profile: document.getElementById("debugProfile"),
+                candidates: document.getElementById("debugCandidates"),
+                capabilities: document.getElementById("debugCapabilities"),
+                recommendations: document.getElementById("debugRecommendations"),
+                pathSummary: document.getElementById("debugPathSummary"),
+                tools: document.getElementById("debugTools"),
+                rag: document.getElementById("debugRag"),
+                events: document.getElementById("debugEvents")
+            });
+            LifeComposerConfirmation.init({
+                area: document.getElementById("confirmationArea"),
+                onDecided: function (result) {
+                    if (result && result.agentMessage) {
+                        appendMessage("assistant", result.agentMessage);
+                    }
+                    LifeComposerDebug.refreshProfile();
+                    LifeComposerDebug.refreshCandidates();
+                }
+            });
+            LifeComposerDebug.refreshProfile();
+            LifeComposerDebug.refreshCandidates();
+            LifeComposerDebug.refreshCapabilities();
+            LifeComposerDebug.refreshRecommendations();
+            LifeComposerConfirmation.refresh();
+        }
 
         async function loadHistory() {
             try {
@@ -416,45 +602,22 @@
             resetTurnState();
 
             try {
-                const response = await fetch("/api/chat/stream", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
-                    credentials: "include",
-                    body: JSON.stringify({ message: text })
-                });
-
-                if (!response.ok) {
-                    let errorText = "请求失败，请重试";
-                    try {
-                        const errorData = await response.json();
-                        errorText = errorData.message || errorData.error || errorText;
-                    } catch (ignored) { }
-                    appendMessage("error", errorText);
-                    return;
-                }
-                if (!response.body) {
-                    appendMessage("error", "浏览器不支持流式响应");
-                    return;
-                }
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder("utf-8");
-                let buffer = "";
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    buffer += decoder.decode(value, { stream: true });
-                    let separatorIndex;
-                    while ((separatorIndex = buffer.indexOf("\n\n")) >= 0) {
-                        const rawEvent = buffer.slice(0, separatorIndex);
-                        buffer = buffer.slice(separatorIndex + 2);
-                        handleSseEvent(rawEvent);
+                await LifeComposerSse.streamChat({ message: text }, {
+                    onEvent: function (name, data) { handleSseEvent(name, data); },
+                    onHttpError: function (status, errorData) {
+                        var errorText = (errorData && (errorData.message || errorData.error)) || "请求失败，请重试";
+                        appendMessage("error", errorText);
+                    },
+                    onNetworkError: function () {
+                        appendMessage("error", "网络错误，请检查连接后重试");
+                    },
+                    onUnsupported: function () {
+                        appendMessage("error", "浏览器不支持流式响应");
+                    },
+                    onStreamError: function () {
+                        appendMessage("error", "流式连接中断，请重试");
                     }
-                }
-                if (buffer.trim()) handleSseEvent(buffer);
-            } catch (e) {
-                stopThinking();
-                appendMessage("error", "网络错误，请检查连接后重试");
+                });
             } finally {
                 stopThinking();
                 sendBtn.disabled = false;
@@ -462,30 +625,24 @@
             }
         }
 
-        function handleSseEvent(rawEvent) {
-            const lines = rawEvent.split("\n");
-            let eventName = "message";
-            const dataLines = [];
-            for (const line of lines) {
-                if (line.startsWith("event:")) {
-                    eventName = line.slice(6).trim();
-                } else if (line.startsWith("data:")) {
-                    dataLines.push(line.slice(5).trim());
-                }
-            }
-            let data = {};
-            if (dataLines.length) {
-                const payload = dataLines.join("\n");
-                try {
-                    data = JSON.parse(payload);
-                } catch (e) {
-                    data = { raw: payload };
-                }
+        function handleSseEvent(eventName, data) {
+            data = data || {};
+            if (window.LifeComposerDebug) {
+                LifeComposerDebug.appendEvent("sse", eventName);
             }
 
             switch (eventName) {
+                case "prompt_versions":
+                    if (window.LifeComposerDebug) {
+                        LifeComposerDebug.appendEvent("prompt",
+                            "prompt versions: " + JSON.stringify(data.versions || {}));
+                    }
+                    break;
                 case "thinking_start":
                     startThinking();
+                    if (window.LifeComposerDebug) {
+                        LifeComposerDebug.setStatus("thinking…");
+                    }
                     break;
                 case "thinking_tick":
                     updateThinking(data.elapsedSeconds);
@@ -495,9 +652,15 @@
                     break;
                 case "tool_call":
                     appendProcessLine("tool", "tool call - " + (data.description || data.name || ""));
+                    if (window.LifeComposerDebug) {
+                        LifeComposerDebug.appendToolCall(data.callId, data.name, data.description, data.arguments);
+                    }
                     break;
                 case "tool_result":
                     appendProcessLine("tool", "tool result - " + (data.name || "") + (data.ok ? " ✓" : " ✗"));
+                    if (window.LifeComposerDebug) {
+                        LifeComposerDebug.appendToolResult(data.callId, data.name, data.ok, data.result);
+                    }
                     break;
                 case "token":
                     appendAssistantDelta(data.delta || "");
@@ -505,13 +668,41 @@
                 case "assistant_message":
                     finalizeAssistantMessage(data.content || "");
                     break;
+                case "profile_change_proposal":
+                    if (window.LifeComposerConfirmation) {
+                        LifeComposerConfirmation.addProposals(data.proposals || []);
+                    }
+                    if (window.LifeComposerDebug) {
+                        LifeComposerDebug.refreshCandidates();
+                        LifeComposerDebug.setStatus("等待用户确认画像变更");
+                    }
+                    break;
+                case "awaiting_confirmation":
+                    stopThinking();
+                    if (window.LifeComposerConfirmation) {
+                        LifeComposerConfirmation.addProposals(data.proposals || []);
+                    }
+                    if (window.LifeComposerDebug) {
+                        LifeComposerDebug.refreshCandidates();
+                        LifeComposerDebug.setStatus("本轮结束：awaiting_confirmation");
+                    }
+                    break;
                 case "error":
                     stopThinking();
                     appendProcessLine("error", data.message || "LLM 不可用，请稍后重试");
                     appendMessage("error", data.message || "LLM 不可用，请稍后重试");
+                    if (window.LifeComposerDebug) {
+                        LifeComposerDebug.setStatus("错误：" + (data.code || ""));
+                    }
                     break;
                 case "done":
                     stopThinking();
+                    if (window.LifeComposerDebug) {
+                        LifeComposerDebug.refreshProfile();
+                        LifeComposerDebug.refreshCandidates();
+                        LifeComposerDebug.refreshCapabilities();
+                        LifeComposerDebug.refreshRecommendations();
+                    }
                     break;
                 default:
                     break;
@@ -614,6 +805,12 @@
                 });
                 if (response.ok) {
                     document.getElementById("messageArea").innerHTML = "";
+                    if (window.LifeComposerConfirmation) {
+                        LifeComposerConfirmation.clearAll();
+                    }
+                    if (window.LifeComposerDebug) {
+                        LifeComposerDebug.refreshCandidates();
+                    }
                     appendMessage("system", "对话已清除");
                 }
             } catch (e) {

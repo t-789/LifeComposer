@@ -18,6 +18,9 @@
 | `capability_tags` | 标准能力标签字典（10 个标签 × L1/L2/L3） |
 | `capability_reference` | 能力映射/模板/大类字典（tags_to_merge / skill_mapping / skill_profiles / role_profiles / major_categories / _meta） |
 | `chat_usage_daily` | v0.0.5 聊天每日用量与额度计数（user_id + usage_date 唯一） |
+| `profile_change_candidates` | v0.1 M2 聊天提议的画像变更候选（待确认/已确认/已拒绝/过期/冲突） |
+| `user_capability_states` | v0.1 M4 用户能力最小状态（等级/证据/来源/置信度） |
+| `recommendation_feedback` | v0.1 M6 推荐反馈（方向、类型、评分配置版本、快照） |
 
 > **注意**：SQLite 当前 `PRAGMA foreign_keys = OFF`（默认），表之间的 `REFERENCES` 约束仅作为逻辑关联标注，运行时不强制。
 
@@ -142,6 +145,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     preferences_json TEXT,
     available_time TEXT,
     goals TEXT,
+    version INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -162,6 +166,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 | `preferences_json` | 用户偏好（JSON 对象） | `{"theme":"dark"}` |
 | `available_time` | 每周可投入时间（自由文本，对应数据样例 `available_time`） | '6 hours/week' |
 | `goals` | 用户成长目标（JSON 数组字符串）。2026-09-05 起原独立 `goals` 表已移除，目标方向统一由本列承载 | `["了解竞赛","积累项目经历"]` |
+| `version` | v0.1 新增，单调递增乐观锁版本（默认 0；任何一次写入 +1） | 1 |
 | `created_at` | 创建时间（自动，datetime 函数） | 2026-06-27 10:00:00 |
 | `updated_at` | 更新时间（自动，datetime 函数） | 2026-06-27 10:00:00 |
 
@@ -216,6 +221,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   user_id INTEGER NOT NULL,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
+  prompt_version TEXT,
   create_time TIMESTAMP NOT NULL
 );
 ```
@@ -224,6 +230,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 |------|------|------|------|
 | `id` | auto | Primary key | 1 |
 | `user_id` | 是 | 所属用户 ID | 5 |
+| `prompt_version` | v0.1 M3：assistant 行使用的提示词版本指纹（如 `CHAT_SYSTEM=2;PROFILE_EXTRACTION=2`），user/tool 行为 NULL；旧库由 `ChatMessageRepository.migrateSchema()` 幂等补列 |
 | `role` | 是 | 'user' 用户消息；'assistant' AI 回复或工具调用请求；'tool' 工具执行结果 | 'user' |
 | `content` | 是 | 消息内容。普通文本直接存储；tool-call 场景为结构化 JSON 字符串（见下方 v0.0.4 说明） | '你好，请问有什么可以帮助你的？' |
 | `create_time` | 是 | 创建时间 | 2026-06-28 12:00:00 |
@@ -550,6 +557,73 @@ WHERE request_count < ?;
 
 ---
 
+## v0.1 新增表（M2/M4/M6）
+
+### `profile_change_candidates`（画像变更候选）
+
+```sql
+CREATE TABLE IF NOT EXISTS profile_change_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL,
+    field_name TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT NOT NULL,
+    rationale TEXT,
+    source TEXT NOT NULL DEFAULT 'chat',
+    status TEXT NOT NULL DEFAULT 'PENDING_CONFIRMATION'
+        CHECK(status IN ('PENDING_CONFIRMATION', 'CONFIRMED', 'REJECTED', 'EXPIRED', 'CONFLICT')),
+    base_version INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    decided_at TEXT,
+    decision_reason TEXT,
+    merged_version INTEGER
+);
+```
+
+- 聊天工具只创建 `PENDING_CONFIRMATION` 行；`POST /api/profiles/change-candidates/{id}/decision` 在同一事务内校验 `base_version` 与当前画像版本，确认后以 `WHERE user_id=? AND version=?` 合并写入。
+- 过期、重复确认、并发更新分别落到 `EXPIRED` / 原状态幂等返回 / `CONFLICT`，均不会污染正式画像。
+- `decision_reason` 只记录用户拒绝理由，不进入画像。
+
+### `user_capability_states`（用户能力状态）
+
+```sql
+CREATE TABLE IF NOT EXISTS user_capability_states (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    tag_name TEXT NOT NULL,
+    level TEXT,
+    evidence_json TEXT,
+    source TEXT NOT NULL,
+    confidence REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, tag_name)
+);
+```
+
+- `tag_name` 必须来自 `capability_tags.name`；写入前经 `skill_mapping` / `tags_to_merge` / 别名归一。
+- `source` 取 `USER_FORM` / `CHAT_CONFIRMED` / `EVIDENCE_INFERRED`，用于回答“这个能力从哪来”。
+
+### `recommendation_feedback`（推荐反馈）
+
+```sql
+CREATE TABLE IF NOT EXISTS recommendation_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    direction_id TEXT NOT NULL,
+    feedback_type TEXT NOT NULL
+        CHECK(feedback_type IN ('useful', 'irrelevant', 'too_hard', 'time_mismatch', 'goal_changed')),
+    note TEXT,
+    scoring_version TEXT,
+    recommendation_snapshot_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+- v0.1 只做可观察、可审计的反馈收集，不做在线学习；`scoring_version` 与快照字段保证历史推荐可解释。
+
 ## 建表顺序
 
 由于存在外键依赖，建表应遵循以下顺序：
@@ -626,6 +700,6 @@ Milestone 7 管理控制台带来按用户/状态/类型/日期的分页筛选�
 ---
 
 *设计日期：2026-06-11*
-*更新日期：2026-09-14（v0.0.6：Milestone 6/7，无表结构变更，补充管理控制台索引与时间戳归一化说明。2026-09-05 第二轮：移除 goals 表并入 user_profiles.goals；resources 改双键 AUTOINCREMENT id + 唯一业务 id resource_id；前轮：college_credit_rules 加 levels_json/notes，user_profiles 加 available_time/goals，新增 resources / rag_chunks / capability_tags / capability_reference）*
+*更新日期：2026-09-23（v0.1：user_profiles 新增 version；新增 profile_change_candidates / user_capability_states / recommendation_feedback。2026-09-14：v0.0.6 Milestone 6/7，无表结构变更，补充管理控制台索引与时间戳归一化说明。2026-09-05 第二轮：移除 goals 表并入 user_profiles.goals；resources 改双键 AUTOINCREMENT id + 唯一业务 id resource_id；前轮：college_credit_rules 加 levels_json/notes，user_profiles 加 available_time/goals，新增 resources / rag_chunks / capability_tags / capability_reference）*
 *参考文件：信通院创新实践活动加分办法_2023级起适用.pdf；样例/SAMPLES-README.md（数据交付包 2026-09-05 快照）*
 *实际代码：LifeComposer/src/main/java/org/example/lifecomposer/Repository/*.java*

@@ -43,12 +43,15 @@
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
 | GET | `/api/profiles/me` | 已登录 | 获取当前用户画像；尚未填写时返回 404 纯文本 `用户档案不存在` |
-| PUT | `/api/profiles/me` | 已登录 | Upsert 当前用户画像，**全量覆盖**：未提交的字段会被写成 `NULL`（局部更新前必须先 GET 合并）；返回落库后重新读取的画像 |
+| PUT | `/api/profiles/me` | 已登录 | Upsert 当前用户画像，**全量覆盖**：未提交的字段会被写成 `NULL`（局部更新前必须先 GET 合并）；返回落库后重新读取的画像。v0.1 起响应含 `version`（乐观锁版本）；请求带 `version` 时执行 `WHERE user_id=? AND version=?`，冲突返回 409 `PROFILE_VERSION_CONFLICT`，不带则保持旧覆盖语义并递增版本 |
+| GET | `/api/profiles/me/capabilities` | 已登录 | v0.1 M4：当前用户归一后的标准能力标签列表（tag / level / evidence / source / confidence / updatedAt）。能力状态是当前画像的投影：清空或删除技能会同步删除对应标签，对象型经历会转成可读证据而不是丢失 |
 
 - 画像字段：`college`、`major`、`grade`、`studentId`、`skillsJson`、`interestsJson`、`experiencesJson`、`preferencesJson`
 - **v0.0.3 新增字段**：`availableTime`（每周可投入时间，自由文本）、`goals`（用户成长目标，JSON 数组字符串）
 - 所有 `*Json` 字段与 `goals` 在传输层都是 **string**（内容是 JSON 文本），前端收发需自行 `JSON.stringify` / `JSON.parse`
+- **v0.1 M4 预检**：`CapabilityPreflightService` 在真实 `DataImportService` 导入（与 `import.sh` 同一套 section 拍平逻辑）后读取 `样例/data/student_profiles.json`，输出覆盖率、逐项未匹配技能、资源模板展开和未匹配模板标签到 `target/capability-preflight-report.json`
 - 原独立 `goals` 表及其整套目标 CRUD 端点已移除，目标统一由 `user_profiles.goals` 列承载
+- **v0.1 M1 校验**：数组字段必须是合法 JSON 数组且元素非空、不重复；`preferencesJson` 必须是 JSON 对象；非法输入返回 400 + 稳定错误码（`INVALID_PROFILE_JSON` / `DUPLICATE_FIELD_VALUE` / `INVALID_FIELD_VALUE`）。正式填写页为 `/front/profile`
 
 ## 规划历史
 
@@ -69,7 +72,7 @@
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
 | POST | `/api/chat/send` | 已登录 | 兼容旧客户端的一次性 JSON；body `{"message":"...","maxTokens":可选}`（`message` ≤5000 字符；服务端强制 `maxTokens` 上限 1024）。内部复用同一 Agent 多轮 tool-use 逻辑。LLM 不可用时返回 HTTP 503 `{"error":"LLM_UNAVAILABLE",...}`；超过分钟/日额度返回 HTTP 429，body 含 `retryAfterSeconds` / `remainingToday` / `minuteRemaining` 等 |
-| POST | `/api/chat/stream` | 已登录 | SSE 流式对话。事件：`thinking_start` / `thinking_tick`(可选) / `thinking_end` / `tool_call` / `tool_result` / `token` / `assistant_message` / `error` / `done`；准入失败返回 HTTP 429 JSON 而不是 SSE |
+| POST | `/api/chat/stream` | 已登录 | SSE 流式对话。事件：`prompt_versions` / `thinking_start` / `thinking_tick`(可选) / `thinking_end` / `tool_call` / `tool_result` / `token` / `assistant_message` / `profile_change_proposal` / `awaiting_confirmation` / `error` / `done`；准入失败返回 HTTP 429 JSON 而不是 SSE。提议画像变更时本轮以 `awaiting_confirmation` 结束，不等待用户点击 |
 | GET | `/api/chat/history` | 已登录 | 获取当前用户的对话历史（`chat_messages` 按时间稳定排序）；包含 user / assistant / tool 行 |
 | DELETE | `/api/chat/context` | 已登录 | 清除当前用户的对话上下文（**物理删除**，会影响后续 LLM 上下文），返回 `{"deleted": n}` |
 
@@ -86,6 +89,45 @@
 > - 被 429 拒绝的请求不扣减日额度；LLM 失败、SSE 中断和客户端断开仍保留已准入请求的用量，避免通过失败绕过限额。
 > - 服务端强制 `max_tokens=1024`；客户端传入更大的 `maxTokens` 会被截断。
 > - 管理员可用 `POST /api/users/admin/chat-quota/reset/{userId}` 重置当前自然日额度，并写入审计日志。
+
+## 画像变更确认（v0.1 M2）
+
+聊天只能创建 `PENDING_CONFIRMATION` 候选，用户确认后才写入正式画像；拒绝理由不会被当作画像事实。
+
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| GET | `/api/profiles/change-candidates` | 已登录 | 当前用户待确认候选列表；返回 candidateId / field / oldValue / newValue / rationale / status / expiresAt |
+| GET | `/api/profiles/change-candidates/{candidateId}` | 已登录 | 单个候选（仅本人）；不存在或非本人返回 404 `CANDIDATE_NOT_FOUND` |
+| POST | `/api/profiles/change-candidates/{candidateId}/decision` | 已登录 | body `{"decision":"CONFIRM"|"REJECT","reason":可选}`。确认后在 `WHERE user_id=? AND version=?` 条件下合并写入并递增版本；返回 status / mergedVersion / decidedAt / agentMessage。过期返回 200 + `EXPIRED`，快照版本冲突返回 200 + `CONFLICT`，重复提交幂等返回原状态 |
+
+- 聊天可提议字段由 `lifecomposer.profile-change.allowed-fields` 控制，默认仅 `availableTime,skillsJson,interestsJson,experiencesJson,goals`；学号、学院、专业、年级必须由正式表单填写。
+- **确认原子性**：确认时先执行 `UPDATE ... SET status='CONFIRMED', merged_version=NULL WHERE candidate_id=? AND status='PENDING_CONFIRMATION' AND expires_at > ?` 抢占候选，成功后才在同一事务内写 `user_profiles`。有效期条件与抢占在同一条 SQL 中，覆盖 `expireStale()` 与抢占之间的过期窗口。并发拒绝、过期或版本冲突导致抢占失败时，正式画像完全不会被修改；抢占后任何异常都会回滚候选状态。
+- 候选有效期由 `lifecomposer.profile-change.ttl-minutes`（默认 30）控制；过期候选不会写入画像。
+- 决策后服务端发起一次短的 Agent 续答（`agentMessage`），把结构化结果交回模型；LLM 不可用时返回确定性兜底文案，决策本身仍已落库。
+- **AI 额度边界（审核整改）**：只有真正产生新决策（PENDING → CONFIRMED/REJECTED）的那一次请求才调用 Agent 续答，并经过 `ChatQuotaService` 与 `/api/chat/*` 相同的分钟/日额度。重复确认、已过期、冲突和跨用户请求是幂等业务操作，不再调用 LLM、不再消耗额度。额度耗尽时决策仍成功落库，响应含 `quotaExceeded:true` 与 `retryAfterSeconds`，仅跳过 AI 续答。
+- **可追溯性**：响应含 `promptVersions`（本次使用的提示词 id → 版本），SSE 在流开始发送 `prompt_versions` 事件；assistant 消息把版本指纹写入 `chat_messages.prompt_version`。当本轮实际调用了推荐/能力/路径工具时，服务端会在后续轮次的 system prompt 中补上 `DIRECTION_EXPLANATION` 与 `PATH_SUGGESTION` 契约，不依赖用户原话是否命中关键词。
+
+## 成长方向与路径推荐（v0.1 M5/M6）
+
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| GET | `/api/growth-directions` | 已登录 | 首批成长方向目录（id/name/description/targetTags/entryTags/requiredHoursPerWeek/difficulty/preparationMonths/resourceIds） |
+| GET | `/api/growth-directions/recommendations` | 已登录 | 当前用户方向推荐；返回 score、classification（SUITABLE / PARTIALLY_SUITABLE / NOT_RECOMMENDED / INSUFFICIENT_INFO）、matchedTags、missingTags、timeNote、scoreBreakdown、scoringVersion、followUpQuestions |
+| GET | `/api/growth-directions/{directionId}/gap` | 已登录 | 用户标准能力标签与方向目标标签的差集；方向不存在返回 404 `DIRECTION_NOT_FOUND` |
+| GET | `/api/growth-directions/{directionId}/path` | 已登录 | 阶段化路径：currentLevel / gapTasks / practiceTasks / resources（含 dataQuality）/ expectedInvestment |
+
+- 评分权重、阈值和版本由 `lifecomposer.recommendation.*` 配置；方向与资源 id 来自 `src/main/resources/recommendation/directions.json`，均为可迁移数据，不硬编码在评分方法中。
+- 评分是确定性的；LLM 只解释 DTO，不重新发明分数或标签。
+- M6 Agent 工具：`list_growth_directions` / `get_capability_gap` / `get_recommendation_reasons` / `get_path_plan` / `submit_recommendation_feedback`。
+
+## 推荐反馈（v0.1 M6）
+
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| POST | `/api/recommendation-feedback` | 已登录 | body `{"directionId":"...","feedbackType":"useful|irrelevant|too_hard|time_mismatch|goal_changed","note":可选}`；非法类型返回 400 `INVALID_FEEDBACK`；方向不存在返回 404 `DIRECTION_NOT_FOUND`，不写入无快照的反馈 |
+| GET | `/api/recommendation-feedback/me` | 已登录 | 当前用户的反馈记录（按时间倒序） |
+
+- 反馈记录方向 id、类型、备注、评分配置版本和推荐快照字段；v0.1 不做在线学习。
 
 ## 加分规则 (College Credit Rules)
 
@@ -231,7 +273,8 @@
 | GET | `/admin/capability-reference` | 运维控制台 · 能力字典 (ADMIN) |
 | GET | `/admin/usage` | 运维控制台 · 聊天用量 (ADMIN) |
 | GET | `/release-notes` | 发布说明 |
-| GET | `/front/chat_test` | AI 对话测试 |
+| GET | `/front/chat_test` | AI 对话调试工作台（v0.1 M7：左侧对话 + 右侧画像/能力/候选/工具/RAG/推荐监控，确认卡片位于输入框上方） |
+| GET | `/front/profile` | 我的成长画像（v0.1 M1：创建/查看/编辑正式画像） |
 | GET | `/front/change-password` | 修改密码页（v0.0.6，临时密码会话唯一可访问的业务页面） |
 
 > v0.0.6：`/admin` 与 `/admin/**` 在 Spring Security 过滤链上即要求 `ROLE_ADMIN`，页面路由内还有一层 `isAdmin` 校验；全部页面共用 `external/static/admin.css` + `external/static/admin.js`（同一套导航、分页器、筛选栏与详情抽屉），页面模板只声明 `data-admin-view`。

@@ -248,4 +248,56 @@ class UserProfileControllerTest extends BaseControllerTest {
         assertEquals(null, row.get("available_time"));
         assertEquals(null, row.get("goals"));
     }
+
+    @Test
+    @DisplayName("PUT /api/profiles/me - invalid JSON field returns stable 400")
+    void putProfile_invalidJson_returnsBadRequest() throws Exception {
+        MockHttpSession session = registerAndLogin("invalidjsonuser", "pass123");
+        mockMvc.perform(put("/api/profiles/me").session(session)
+                        .header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content("{\"skillsJson\":\"not-json\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("INVALID_PROFILE_JSON"));
+    }
+
+    @Test
+    @DisplayName("PUT /api/profiles/me - duplicate array values return stable 400")
+    void putProfile_duplicateValues_returnsBadRequest() throws Exception {
+        MockHttpSession session = registerAndLogin("duplicateuser", "pass123");
+        mockMvc.perform(put("/api/profiles/me").session(session)
+                        .header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content("{\"skillsJson\":\"[\\\"Java\\\",\\\"Java\\\"]\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("DUPLICATE_FIELD_VALUE"));
+    }
+
+    @Test
+    @DisplayName("PUT /api/profiles/me - version round-trip and stale version conflict")
+    void putProfile_versionOptimisticLock() throws Exception {
+        MockHttpSession session = registerAndLogin("versionuser", "pass123");
+
+        mockMvc.perform(put("/api/profiles/me").session(session)
+                        .header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content("{\"college\":\"计算机学院\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1));
+
+        mockMvc.perform(put("/api/profiles/me").session(session)
+                        .header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content("{\"college\":\"软件学院\",\"version\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.college").value("软件学院"));
+
+        mockMvc.perform(put("/api/profiles/me").session(session)
+                        .header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content("{\"college\":\"网络空间安全学院\",\"version\":1}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("PROFILE_VERSION_CONFLICT"));
+    }
 }

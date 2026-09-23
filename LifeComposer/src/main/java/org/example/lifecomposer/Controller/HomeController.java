@@ -105,6 +105,12 @@ public class HomeController {
         return "chat_test";
     }
 
+    /** v0.1 M1: formal user profile form (create/view/edit own profile). */
+    @GetMapping("/front/profile")
+    public String profile() {
+        return "profile";
+    }
+
     /**
      * Review follow-up: the only page a forced-change session may open. The page
      * itself is protected by the filter chain ({@code /front/**} requires

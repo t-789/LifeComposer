@@ -3,6 +3,7 @@ package org.example.lifecomposer.Controller;
 import jakarta.validation.Valid;
 import org.example.lifecomposer.Entity.User;
 import org.example.lifecomposer.Repository.UserRepository;
+import org.example.lifecomposer.Service.CapabilityStateService;
 import org.example.lifecomposer.Service.UserProfileService;
 import org.example.lifecomposer.dto.UserProfileDto;
 import org.springframework.http.HttpStatus;
@@ -18,10 +19,14 @@ import java.util.Map;
 public class UserProfileController {
 
     private final UserProfileService userProfileService;
+    private final CapabilityStateService capabilityStateService;
     private final UserRepository userRepository;
 
-    public UserProfileController(UserProfileService userProfileService, UserRepository userRepository) {
+    public UserProfileController(UserProfileService userProfileService,
+                                 CapabilityStateService capabilityStateService,
+                                 UserRepository userRepository) {
         this.userProfileService = userProfileService;
+        this.capabilityStateService = capabilityStateService;
         this.userRepository = userRepository;
     }
 
@@ -38,6 +43,16 @@ public class UserProfileController {
         }
 
         return ResponseEntity.ok(profile);
+    }
+
+    /** v0.1 M4: standard capability tags with level/evidence/source for the current user. */
+    @GetMapping("/me/capabilities")
+    public ResponseEntity<?> getMyCapabilities(Authentication authentication) {
+        User currentUser = getCurrentUser(authentication);
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("用户未登录");
+        }
+        return ResponseEntity.ok(capabilityStateService.statesFor(currentUser.getId().longValue()));
     }
 
     @PutMapping("/me")

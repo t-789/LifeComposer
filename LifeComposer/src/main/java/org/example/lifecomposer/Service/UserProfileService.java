@@ -1,17 +1,26 @@
 package org.example.lifecomposer.Service;
 
 import org.example.lifecomposer.Entity.UserProfile;
+import org.example.lifecomposer.Exception.ProfileApiException;
 import org.example.lifecomposer.Repository.UserProfileRepository;
 import org.example.lifecomposer.dto.UserProfileDto;
 import org.springframework.stereotype.Service;
+
+import java.util.Objects;
 
 @Service
 public class UserProfileService {
 
     private final UserProfileRepository userProfileRepository;
+    private final ProfileFieldValidator fieldValidator;
+    private final CapabilityStateService capabilityStateService;
 
-    public UserProfileService(UserProfileRepository userProfileRepository) {
+    public UserProfileService(UserProfileRepository userProfileRepository,
+                              ProfileFieldValidator fieldValidator,
+                              CapabilityStateService capabilityStateService) {
         this.userProfileRepository = userProfileRepository;
+        this.fieldValidator = fieldValidator;
+        this.capabilityStateService = capabilityStateService;
     }
 
     public UserProfileDto getProfile(Long userId) {
@@ -23,29 +32,60 @@ public class UserProfileService {
     }
 
     public UserProfileDto saveOrUpdate(Long userId, UserProfileDto dto) {
-        UserProfile profile = new UserProfile();
-        profile.setUserId(userId);
-        profile.setCollege(dto.getCollege());
-        profile.setMajor(dto.getMajor());
-        profile.setGrade(dto.getGrade());
-        profile.setStudentId(dto.getStudentId());
-        profile.setSkillsJson(dto.getSkillsJson());
-        profile.setInterestsJson(dto.getInterestsJson());
-        profile.setExperiencesJson(dto.getExperiencesJson());
-        profile.setPreferencesJson(dto.getPreferencesJson());
-        profile.setAvailableTime(dto.getAvailableTime());
-        profile.setGoals(dto.getGoals());
+        UserProfile incoming = fromDto(userId, dto, true);
+        Long requestedVersion = dto.getVersion();
 
-        boolean upserted = userProfileRepository.upsert(profile);
-        if (!upserted) {
-            throw new IllegalStateException("保存用户档案失败");
+        if (requestedVersion == null) {
+            // v0.0.7 compatibility: full overwrite for old clients.
+            if (!userProfileRepository.upsert(incoming)) {
+                throw new ProfileApiException("PROFILE_SAVE_FAILED", "保存用户档案失败");
+            }
+        } else {
+            UserProfile current = userProfileRepository.findByUserId(userId);
+            if (current == null) {
+                if (requestedVersion != 0L) {
+                    throw versionConflict();
+                }
+                if (!userProfileRepository.insertIfAbsent(incoming)) {
+                    throw versionConflict();
+                }
+            } else {
+                if (!Objects.equals(current.getVersion(), requestedVersion)) {
+                    throw versionConflict();
+                }
+                if (!userProfileRepository.updateWithVersion(incoming, requestedVersion)) {
+                    throw versionConflict();
+                }
+            }
         }
 
         UserProfile saved = userProfileRepository.findByUserId(userId);
         if (saved == null) {
-            throw new IllegalStateException("保存后读取用户档案失败");
+            throw new ProfileApiException("PROFILE_SAVE_FAILED", "保存后读取用户档案失败");
         }
+        capabilityStateService.recordSkills(userId, saved.getSkillsJson(), saved.getExperiencesJson(), "USER_FORM");
         return toDto(saved);
+    }
+
+    private ProfileApiException versionConflict() {
+        return new ProfileApiException("PROFILE_VERSION_CONFLICT",
+                "画像已被其他操作更新，请刷新后重试");
+    }
+
+    private UserProfile fromDto(Long userId, UserProfileDto dto, boolean rejectDuplicates) {
+        UserProfile profile = new UserProfile();
+        profile.setUserId(userId);
+        profile.setCollege(fieldValidator.validateAndNormalize("college", dto.getCollege(), rejectDuplicates));
+        profile.setMajor(fieldValidator.validateAndNormalize("major", dto.getMajor(), rejectDuplicates));
+        profile.setGrade(fieldValidator.validateAndNormalize("grade", dto.getGrade(), rejectDuplicates));
+        profile.setStudentId(fieldValidator.validateAndNormalize("studentId", dto.getStudentId(), rejectDuplicates));
+        profile.setSkillsJson(fieldValidator.validateAndNormalize("skillsJson", dto.getSkillsJson(), rejectDuplicates));
+        profile.setInterestsJson(fieldValidator.validateAndNormalize("interestsJson", dto.getInterestsJson(), rejectDuplicates));
+        profile.setExperiencesJson(fieldValidator.validateAndNormalize("experiencesJson", dto.getExperiencesJson(), rejectDuplicates));
+        profile.setPreferencesJson(fieldValidator.validateAndNormalize("preferencesJson", dto.getPreferencesJson(), rejectDuplicates));
+        profile.setAvailableTime(fieldValidator.validateAndNormalize("availableTime", dto.getAvailableTime(), rejectDuplicates));
+        profile.setGoals(fieldValidator.validateAndNormalize("goals", dto.getGoals(), rejectDuplicates));
+        return profile;
     }
 
     private UserProfileDto toDto(UserProfile profile) {
@@ -63,6 +103,7 @@ public class UserProfileService {
         dto.setPreferencesJson(profile.getPreferencesJson());
         dto.setAvailableTime(profile.getAvailableTime());
         dto.setGoals(profile.getGoals());
+        dto.setVersion(profile.getVersion());
         return dto;
     }
 }

@@ -16,5 +16,7 @@ public class ChatMessage {
      */
     private String role;
     private String content;
+    /** Prompt-version fingerprint for assistant rows; null for user/tool rows. */
+    private String promptVersion;
     private Timestamp createTime;
 }

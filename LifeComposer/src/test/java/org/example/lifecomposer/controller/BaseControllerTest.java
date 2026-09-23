@@ -70,6 +70,9 @@ public abstract class BaseControllerTest {
         jdbcTemplate.execute("DELETE FROM chat_messages");
         jdbcTemplate.execute("DELETE FROM planning_history");
         jdbcTemplate.execute("DELETE FROM feedback");
+        jdbcTemplate.execute("DELETE FROM recommendation_feedback");
+        jdbcTemplate.execute("DELETE FROM user_capability_states");
+        jdbcTemplate.execute("DELETE FROM profile_change_candidates");
         jdbcTemplate.execute("DELETE FROM user_profiles");
         jdbcTemplate.execute("DELETE FROM users");
         jdbcTemplate.execute("INSERT INTO users(username, password_hash, type, is_banned, created_at, updated_at) " +

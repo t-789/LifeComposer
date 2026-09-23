@@ -18,6 +18,8 @@ public class UserProfile {
     private String preferencesJson;
     private String availableTime;
     private String goals;
+    /** Monotonic optimistic-lock version; 0 means "no row / never written". */
+    private Long version;
     private String createdAt;
     private String updatedAt;
 }

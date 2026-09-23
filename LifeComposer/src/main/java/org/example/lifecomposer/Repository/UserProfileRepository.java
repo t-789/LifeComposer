@@ -35,11 +35,16 @@ public class UserProfileRepository {
             profile.setPreferencesJson(rs.getString("preferences_json"));
             profile.setAvailableTime(rs.getString("available_time"));
             profile.setGoals(rs.getString("goals"));
+            long version = rs.getLong("version");
+            profile.setVersion(rs.wasNull() ? 0L : version);
             profile.setCreatedAt(rs.getString("created_at"));
             profile.setUpdatedAt(rs.getString("updated_at"));
             return profile;
         }
     };
+
+    private static final String COLUMNS = "college, major, grade, student_id, skills_json, interests_json, "
+            + "experiences_json, preferences_json, available_time, goals";
 
     public void createTableIfNeeded() {
         String sql = """
@@ -56,6 +61,7 @@ public class UserProfileRepository {
                     preferences_json TEXT,
                     available_time TEXT,
                     goals TEXT,
+                    version INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL DEFAULT (datetime('now')),
                     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
                 )
@@ -70,6 +76,10 @@ public class UserProfileRepository {
 
         if (!hasColumn("user_profiles", "goals")) {
             jdbcTemplate.execute("ALTER TABLE user_profiles ADD COLUMN goals TEXT");
+        }
+
+        if (!hasColumn("user_profiles", "version")) {
+            jdbcTemplate.execute("ALTER TABLE user_profiles ADD COLUMN version INTEGER NOT NULL DEFAULT 0");
         }
     }
 
@@ -89,17 +99,18 @@ public class UserProfileRepository {
         }
     }
 
+    /**
+     * Unconditional full overwrite used by the v0.0.7-compatible PUT path and by
+     * callers that do not send a version. Always increments {@code version}.
+     */
     public boolean upsert(UserProfile profile) {
         String sql = """
                 INSERT INTO user_profiles
                     (user_id, college, major, grade, student_id,
                      skills_json, interests_json, experiences_json, preferences_json,
-                     available_time, goals,
+                     available_time, goals, version,
                      created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
-                    (SELECT created_at FROM user_profiles WHERE user_id = ?),
-                    datetime('now')
-                ), datetime('now'))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
                 ON CONFLICT(user_id) DO UPDATE SET
                     college = excluded.college,
                     major = excluded.major,
@@ -111,6 +122,7 @@ public class UserProfileRepository {
                     preferences_json = excluded.preferences_json,
                     available_time = excluded.available_time,
                     goals = excluded.goals,
+                    version = user_profiles.version + 1,
                     updated_at = datetime('now')
                 """;
         Long userId = profile.getUserId();
@@ -125,8 +137,73 @@ public class UserProfileRepository {
                 profile.getExperiencesJson(),
                 profile.getPreferencesJson(),
                 profile.getAvailableTime(),
+                profile.getGoals()
+        );
+        return rows > 0;
+    }
+
+    /** Inserts only when no row exists; returns false when another writer won. */
+    public boolean insertIfAbsent(UserProfile profile) {
+        String sql = """
+                INSERT INTO user_profiles
+                    (user_id, college, major, grade, student_id,
+                     skills_json, interests_json, experiences_json, preferences_json,
+                     available_time, goals, version,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
+                ON CONFLICT(user_id) DO NOTHING
+                """;
+        int rows = jdbcTemplate.update(sql,
+                profile.getUserId(),
+                profile.getCollege(),
+                profile.getMajor(),
+                profile.getGrade(),
+                profile.getStudentId(),
+                profile.getSkillsJson(),
+                profile.getInterestsJson(),
+                profile.getExperiencesJson(),
+                profile.getPreferencesJson(),
+                profile.getAvailableTime(),
+                profile.getGoals()
+        );
+        return rows > 0;
+    }
+
+    /**
+     * Optimistic-lock update: only succeeds while the stored row is still at
+     * {@code expectedVersion}. Returns false on a version mismatch, which the
+     * service surfaces as {@code PROFILE_VERSION_CONFLICT}.
+     */
+    public boolean updateWithVersion(UserProfile profile, long expectedVersion) {
+        String sql = """
+                UPDATE user_profiles SET
+                    college = ?,
+                    major = ?,
+                    grade = ?,
+                    student_id = ?,
+                    skills_json = ?,
+                    interests_json = ?,
+                    experiences_json = ?,
+                    preferences_json = ?,
+                    available_time = ?,
+                    goals = ?,
+                    version = version + 1,
+                    updated_at = datetime('now')
+                WHERE user_id = ? AND version = ?
+                """;
+        int rows = jdbcTemplate.update(sql,
+                profile.getCollege(),
+                profile.getMajor(),
+                profile.getGrade(),
+                profile.getStudentId(),
+                profile.getSkillsJson(),
+                profile.getInterestsJson(),
+                profile.getExperiencesJson(),
+                profile.getPreferencesJson(),
+                profile.getAvailableTime(),
                 profile.getGoals(),
-                userId
+                profile.getUserId(),
+                expectedVersion
         );
         return rows > 0;
     }

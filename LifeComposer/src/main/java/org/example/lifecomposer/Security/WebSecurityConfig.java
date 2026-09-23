@@ -86,6 +86,8 @@ public class WebSecurityConfig {
                         .requestMatchers("/api/profiles/**").authenticated()
                         .requestMatchers("/api/planning/**").authenticated()
                         .requestMatchers("/api/chat/**").authenticated()
+                        .requestMatchers("/api/growth-directions/**").authenticated()
+                        .requestMatchers("/api/recommendation-feedback/**").authenticated()
                         .requestMatchers("/api/college-credit-rules/**").authenticated()
                         .requestMatchers("/api/credit-activities/**").authenticated()
                         .requestMatchers("/api/resources/**").authenticated()

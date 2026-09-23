@@ -198,6 +198,94 @@
       ============================================================
     -->
 
+    <!-- ========== v0.1 ========== -->
+    <div class="container">
+        <h1>v0.1 — 业务闭环：画像确认 → 能力归一 → 方向与路径推荐 → Agent 解释与反馈</h1>
+        <p><em>2026 年 9 月 23 日</em></p>
+
+        <div class="stats-grid">
+            <div class="stat-item"><span class="stat-num">7</span><span class="stat-label">Milestone</span></div>
+            <div class="stat-item"><span class="stat-num">4</span><span class="stat-label">新增/扩展表</span></div>
+            <div class="stat-item"><span class="stat-num">5</span><span class="stat-label">新增 Agent 工具</span></div>
+            <div class="stat-item"><span class="stat-num">47</span><span class="stat-label">新增自动化测试</span></div>
+            <div class="stat-item"><span class="stat-num">383</span><span class="stat-label">自动化测试</span></div>
+        </div>
+
+        <div class="improvement-list">
+            <h3>目标：能力画像 → 方向识别 → 路径推荐 → 资源适配 → Agent 建议</h3>
+            <p>v0.1 把已有用户、画像、资源库、能力字典、RAG 与 Agent tool-use 基础设施串成最小可验证业务闭环；正式前端技术选型仍留到 v1。</p>
+        </div>
+
+        <h2>M1 正式画像录入与查看</h2>
+        <ul>
+            <li>新增 <code>/front/profile</code> 画像填写/编辑页，覆盖专业、年级、技能、兴趣、经历、可投入时间和目标。</li>
+            <li>技能/兴趣/目标/经历做 JSON 结构校验与去重，偏好必须是 JSON 对象；非法输入返回稳定 400。</li>
+            <li><code>user_profiles</code> 新增 <code>version</code> 乐观锁列；PUT 携带 version 时按 <code>WHERE user_id=? AND version=?</code> 更新，冲突返回 409 <code>PROFILE_VERSION_CONFLICT</code>。</li>
+        </ul>
+
+        <h2>M2 聊天辅助画像与确认写入</h2>
+        <ul>
+            <li>新增 <code>profile_change_candidates</code>：聊天只创建待确认候选，未确认信息绝不进入正式画像。</li>
+            <li>新增 <code>propose_profile_update</code> 工具；SSE 增加 <code>profile_change_proposal</code> 与 <code>awaiting_confirmation</code>，本轮不等待用户点击。</li>
+            <li>新增 <code>GET/POST /api/profiles/change-candidates</code> 独立确认接口；确认后才合并写入，拒绝理由只记录在候选行。</li>
+            <li>覆盖重复确认幂等、过期、并发版本冲突、跨用户隔离和非法字段测试。</li>
+        </ul>
+
+        <h2>M3 提示词目录</h2>
+        <ul>
+            <li>新增 <code>src/main/resources/prompts/</code>：聊天系统、画像提取、方向解释和路径建议四份带版本头的提示词。</li>
+            <li><code>PromptCatalog</code> 启动时加载并校验；Agent 主流程不再内嵌系统提示词，推荐解释不得重新发明评分。</li>
+        </ul>
+
+        <h2>M4 能力标签归一与能力状态</h2>
+        <ul>
+            <li>基于 <code>skill_mapping</code>、<code>tags_to_merge</code>、标签别名做确定性归一；<code>skill_profiles</code> / <code>role_profiles</code> 支持模板展开与 extra/exclude。</li>
+            <li>新增 <code>user_capability_states</code>，记录标准标签、等级、证据、来源（正式表单/聊天确认）和更新时间。</li>
+            <li>预检测试读取样例画像与资源，输出 <code>target/capability-preflight-report.json</code>；样例技能归一覆盖率 100%。</li>
+        </ul>
+
+        <h2>M5 成长方向与路径推荐</h2>
+        <ul>
+            <li>新增 <code>recommendation/directions.json</code> 首批 4 个方向：编程基础、算法竞赛、数据分析与数学建模、AI 工具应用。</li>
+            <li>确定性评分：技能匹配、时间匹配、目标相关性、难度、准备周期；权重/阈值/版本由 <code>lifecomposer.recommendation.*</code> 配置。</li>
+            <li>返回逐项评分明细、匹配/缺失标签、时间依据、资源来源和 <code>needs_review</code> 数据质量提示；提供适合/部分适合/信息不足回归夹具。</li>
+        </ul>
+
+        <h2>M6 Agent 工具与反馈</h2>
+        <ul>
+            <li>新增只读工具 <code>list_growth_directions</code> / <code>get_capability_gap</code> / <code>get_recommendation_reasons</code> / <code>get_path_plan</code>。</li>
+            <li>新增 <code>submit_recommendation_feedback</code> 与 <code>/api/recommendation-feedback</code>，记录有用/无关/太难/时间不合适/目标改变与评分配置版本。</li>
+        </ul>
+
+        <h2>M7 chat_test 调试工作台</h2>
+        <ul>
+            <li>左对话 + 右监控：画像、画像候选、能力标签、推荐方向、工具调用、RAG 命中和 SSE 事件。</li>
+            <li>画像确认卡片固定在输入框上方；<code>external/static/sse-client.js</code>、<code>confirmation-cards.js</code>、<code>debug-panel.js</code> 可脱离页面复用。</li>
+            <li>窄屏下监控面板折叠为底部区域；动态内容全部使用 <code>textContent</code> 渲染。</li>
+        </ul>
+
+        <h2>审核整改（2026-09-23 复审）</h2>
+        <ul>
+            <li>画像确认续答纳入 <code>ChatQuotaService</code>：只有新决策才调用 LLM，重复确认/过期/冲突不再消耗额度或触发续答；额度耗尽仍落库并返回 <code>quotaExceeded</code>。</li>
+            <li><code>PromptComposer</code> 让画像提取、方向解释和路径建议 Prompt 真正参与 Agent 流程；版本通过 SSE <code>prompt_versions</code>、<code>ChatResponse.promptVersions</code> 和 <code>chat_messages.prompt_version</code> 可追溯。</li>
+            <li>能力状态改为当前画像投影：删除/清空技能会同步删除旧标签，对象型经历会转为可读证据。</li>
+            <li>调试面板支持 RAG <code>data.items</code>、评分明细、资源来源与 <code>needs_review</code>、工具耗时和错误详情。</li>
+            <li>M4 预检改由 <code>DataImportService</code> 真实导入路径驱动，报告逐项记录未匹配技能/模板标签。</li>
+            <li>推荐反馈校验方向存在；未知方向返回 404 <code>DIRECTION_NOT_FOUND</code>，不再写入无推荐快照的反馈。</li>
+            <li>候选确认改为原子竞争：先抢占 PENDING→CONFIRMED（SQL 内同时校验 <code>expires_at &gt; 确认时间</code>），再在同一事务写画像；并发拒绝/过期/冲突与版本冲突都不会写入未确认内容，覆盖清理与抢占之间的过期窗口。</li>
+            <li>推荐/路径 Prompt 不再只靠关键词：实际调用 <code>list_growth_directions</code> / <code>get_capability_gap</code> / <code>get_recommendation_path</code> 等工具后，后续轮次自动补上方向解释与路径建议契约；同时补充“蓝桥杯、怎么准备”等同义/比赛表达。</li>
+            <li>修复 <code>/front/profile</code> 经历输入框 placeholder 中未转义双引号导致 HTML 属性截断的问题。</li>
+        </ul>
+
+        <h2>文档与兼容性</h2>
+        <ul>
+            <li>现有 v0.0.7 端点保持响应格式；v0.1 新端点直接返回领域对象/结果对象，不套统一外壳。</li>
+            <li>同步更新 <code>API.md</code>、<code>SCHEMA.md</code>、<code>AGENTS.md</code>、<code>PROJECT_PLAN.md</code>。</li>
+        </ul>
+
+        <a class="back-link" href="/">返回首页</a>
+    </div>
+
     <!-- ========== v0.0.7 ========== -->
     <div class="container">
         <h1>v0.0.7 — 人工审核问题整改：状态码统一与异常边界整理</h1>

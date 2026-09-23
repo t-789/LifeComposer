@@ -11,4 +11,8 @@ public class ChatResponse {
     private String createTime; // formatted timestamp string
     private Boolean mocked;
     private String error;
+    /** True when the turn stopped to wait for a profile-change confirmation. */
+    private Boolean awaitingConfirmation;
+    /** Versioned prompt ids actually used for this turn (traceability). */
+    private java.util.Map<String, String> promptVersions;
 }

@@ -51,6 +51,11 @@ public class ChatService {
         return chatMessageRepository.findByUserId(userId);
     }
 
+    /** v0.1 M2: run a short agent turn after a profile-change decision. */
+    public ChatResponse continueAfterProfileDecision(Integer userId, String decisionContext) {
+        return agentOrchestrator.continueAfterProfileDecision(userId, decisionContext);
+    }
+
     public int clearContext(Integer userId) {
         LOG.info("Clearing chat context for user: {}", userId);
         return chatMessageRepository.deleteByUserId(userId);

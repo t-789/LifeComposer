@@ -26,13 +26,22 @@
 - 生成式 LLM 默认统一切换 DeepSeek `deepseek-flash`；`/api/chat/*` 不使用 fallback（503 / SSE error）
 - 启动脚本 `run.sh`（环境变量加载，密钥安全）
 - **人工审核问题整改（v0.0.7）**：生产代码 HTTP 状态码统一为 `HttpStatus` 命名常量；`GlobalExceptionHandler` 与 `ValidationExceptionHandler` 职责边界拆分（输入错误 vs 全局兜底）并按 `@Order` 固定优先级；客户端断开（`ClientAbortException` / `AsyncRequestNotUsableException`）按流生命周期处理、不再误写系统反馈；`ImportOptions` 用字段级 Lombok `@Getter` 收敛简单 getter；`ImportError` record 意图文档化并用测试锁定
-- 336 个自动化测试，全部通过
+- **v0.1 业务闭环（2026-09-23）**：
+  - M1 正式画像：`/front/profile` 填写/查看/编辑；PUT 支持 `version` 乐观锁（`WHERE user_id=? AND version=?`）、非法 JSON/重复值稳定 400
+  - M2 聊天辅助画像：`profile_change_candidates` 候选表 + `propose_profile_update` 工具 + `profile_change_proposal` / `awaiting_confirmation` SSE + 独立确认接口；确认后才写入画像，拒绝理由不入画像
+  - M3 提示词目录：`src/main/resources/prompts/*.md`（版本头）+ `PromptCatalog`，Agent 主流程不再内嵌系统提示词
+  - M4 能力归一：`skill_mapping` / `tags_to_merge` / 别名归一、`skill_profiles` 展开、能力差集、`user_capability_states`（等级/证据/来源）
+  - M5 方向与路径：`recommendation/directions.json` + `lifecomposer.recommendation.*` 权重/阈值；确定性评分明细、三档回归夹具、阶段化路径
+  - M6 工具与反馈：`list_growth_directions` / `get_capability_gap` / `get_recommendation_reasons` / `get_path_plan` / `submit_recommendation_feedback` + `/api/recommendation-feedback`
+  - M7 `chat_test` 调试工作台：左侧对话 + 右侧画像/候选/能力/推荐/工具/RAG 监控；确认卡片位于输入框上方；SSE 解析抽到 `external/static/sse-client.js`
+- **审核整改（2026-09-23）**：画像确认续答纳入聊天额度且重复确认不再触发 LLM；候选确认改为“先原子抢占 PENDING→CONFIRMED（SQL 同时校验 expires_at > 确认时间），再在同一事务写画像”，并发拒绝/过期/冲突不会留下未确认写入；`PromptComposer` 让画像提取/方向解释/路径建议 Prompt 真正参与流程，版本写入 `chat_messages.prompt_version` 与 SSE `prompt_versions`；能力状态改为当前画像投影（删技能即删标签，对象经历保留证据）；调试面板支持 RAG `data.items`、评分明细、资源来源与 `needs_review`、工具耗时和错误详情；M4 预检改走 `DataImportService` 并记录真实未匹配项；推荐反馈校验方向存在；实际调用推荐工具后自动补上方向解释/路径建议 Prompt；修正画像页 experience 输入框 placeholder 的引号转义
+- 383 个自动化测试，全部通过
 
 ### 下一阶段目标
 
-- 能力画像 → 路径推荐算法（skill_mapping 归一 + skill_profiles 展开 + 标签差集匹配）
-- 前端从 `chat_test.html` 推广到正式聊天页面
-- RAG 检索效果回归（`样例/rag/test_questions.json` 夹具）与资源库持续扩充
+- v1：把 `chat_test` 验证过的 SSE 客户端、画像面板、确认卡片、工具监控和推荐监控迁移到正式聊天页
+- 正式用户流程从注册开始覆盖画像 → 推荐 → 路径 → 资源 → 反馈，不再依赖 `testuser_N`
+- RAG 检索效果回归（`样例/rag/test_questions.json` 夹具）、资源库/方向库持续扩充、评分权重人工验收后替换实验默认值
 
 ## 快速导航
 

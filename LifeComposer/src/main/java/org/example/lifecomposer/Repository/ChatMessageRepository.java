@@ -31,6 +31,7 @@ public class ChatMessageRepository {
             msg.setUserId(rs.getInt("user_id"));
             msg.setRole(rs.getString("role"));
             msg.setContent(rs.getString("content"));
+            msg.setPromptVersion(rs.getString("prompt_version"));
             msg.setCreateTime(rs.getTimestamp("create_time"));
             return msg;
         }
@@ -43,21 +44,37 @@ public class ChatMessageRepository {
                   user_id INTEGER NOT NULL,
                   role TEXT NOT NULL,
                   content TEXT NOT NULL,
+                  prompt_version TEXT,
                   create_time TIMESTAMP NOT NULL
                 )
                 """;
         jdbcTemplate.execute(sql);
     }
 
+    /** v0.1 M3: idempotent column migration for databases created before prompt versions. */
+    public void migrateSchema() {
+        if (!hasColumn("chat_messages", "prompt_version")) {
+            jdbcTemplate.execute("ALTER TABLE chat_messages ADD COLUMN prompt_version TEXT");
+        }
+    }
+
+    private boolean hasColumn(String tableName, String columnName) {
+        List<String> columns = jdbcTemplate.query("PRAGMA table_info(" + tableName + ")",
+                (rs, rowNum) -> rs.getString("name"));
+        return columns.stream().anyMatch(col -> col.equalsIgnoreCase(columnName));
+    }
+
     public int saveMessage(ChatMessage msg) {
-        String sql = "INSERT INTO chat_messages(user_id, role, content, create_time) VALUES (?, ?, ?, ?)";
+        String sql = "INSERT INTO chat_messages(user_id, role, content, prompt_version, create_time) "
+                + "VALUES (?, ?, ?, ?, ?)";
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(sql, new String[]{"id"});
             ps.setInt(1, msg.getUserId());
             ps.setString(2, msg.getRole());
             ps.setString(3, msg.getContent());
-            ps.setTimestamp(4, msg.getCreateTime());
+            ps.setString(4, msg.getPromptVersion());
+            ps.setTimestamp(5, msg.getCreateTime());
             return ps;
         }, keyHolder);
         return keyHolder.getKey().intValue();

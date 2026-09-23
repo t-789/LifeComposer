@@ -45,6 +45,9 @@ class AgentOrchestratorTest {
         ChatResponse response = orchestrator.sendMessage(1, "帮我找数学建模");
 
         assertEquals("最终回答", response.getContent());
+        assertNotNull(response.getPromptVersions());
+        assertTrue(response.getPromptVersions().containsKey("PROFILE_EXTRACTION"),
+                "普通聊天也应启用结构化画像提取 Prompt");
         assertEquals(4, stored.size());
         assertEquals("user", stored.get(0).getRole());
         assertEquals("帮我找数学建模", stored.get(0).getContent());
@@ -59,6 +62,8 @@ class AgentOrchestratorTest {
 
         assertEquals("assistant", stored.get(3).getRole());
         assertEquals("最终回答", stored.get(3).getContent());
+        assertNotNull(stored.get(3).getPromptVersion(), "assistant 消息应持久化 Prompt 版本指纹");
+        assertTrue(stored.get(3).getPromptVersion().contains("CHAT_SYSTEM="));
 
         // Second LLM call must receive the reconstructed tool result message.
         List<LlmRequestDto> requests = client.requests;
@@ -243,6 +248,35 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    void injectsRecommendationContractWhenRecommendationToolWasCalled() {
+        List<ChatMessage> stored = new ArrayList<>();
+        ChatMessageRepository repository = mockRepository(stored);
+
+        ScriptedLlmClient client = new ScriptedLlmClient(List.of(
+                recommendationToolCallResponse(),
+                textResponse("done")));
+        LlmClientFactory factory = mock(LlmClientFactory.class);
+        when(factory.getClient("chat")).thenReturn(client);
+
+        ToolRegistry registry = new ToolRegistry(List.of(new FakeListGrowthDirectionsTool()));
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                repository, factory, registry, new AppSecurityProperties());
+
+        ChatResponse response = orchestrator.sendMessage(1, "帮我看看");
+        assertEquals("done", response.getContent());
+
+        List<LlmChatMessage> secondRequest = client.requests.get(1).getMessages();
+        boolean hasContract = secondRequest.stream()
+                .filter(message -> "system".equals(message.getRole()))
+                .anyMatch(message -> message.getContent() != null
+                        && message.getContent().contains("direction_explanation")
+                        && message.getContent().contains("path_suggestion"));
+        assertTrue(hasContract, "实际调用推荐工具后，后续轮次应补上方向解释/路径建议契约");
+        assertTrue(response.getPromptVersions().containsKey("DIRECTION_EXPLANATION"));
+        assertTrue(response.getPromptVersions().containsKey("PATH_SUGGESTION"));
+    }
+
+    @Test
     void keepsSmallerClientMaxTokens() {
         ChatMessageRepository repository = mockRepository(new ArrayList<>());
         LlmClientFactory factory = mock(LlmClientFactory.class);
@@ -275,6 +309,13 @@ class AgentOrchestratorTest {
             return null;
         }).when(repository).saveMessages(anyList());
         return repository;
+    }
+
+    private LlmResponseDto recommendationToolCallResponse() {
+        LlmResponseDto response = new LlmResponseDto();
+        response.setToolCalls(List.of(new LlmToolCall(
+                "call-1", "list_growth_directions", "{}")));
+        return response;
     }
 
     private LlmResponseDto toolCallResponse() {
@@ -430,6 +471,34 @@ class AgentOrchestratorTest {
         public void onToken(String delta) {
             tokens.add(delta);
             order.add("token");
+        }
+    }
+
+    private static final class FakeListGrowthDirectionsTool implements AgentTool {
+
+        @Override
+        public String name() {
+            return "list_growth_directions";
+        }
+
+        @Override
+        public String description() {
+            return "列出成长方向";
+        }
+
+        @Override
+        public String displayDescription() {
+            return "计算成长方向推荐";
+        }
+
+        @Override
+        public Map<String, Object> parameterSchema() {
+            return Map.of("type", "object", "properties", Map.of(), "additionalProperties", false);
+        }
+
+        @Override
+        public ToolResult execute(AgentToolContext context, JsonObject arguments) {
+            return ToolResult.ok(Map.of("count", 1, "recommendations", List.of()));
         }
     }
 
