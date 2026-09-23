@@ -34,8 +34,8 @@
   - M5 方向与路径：`recommendation/directions.json` + `lifecomposer.recommendation.*` 权重/阈值；确定性评分明细、三档回归夹具、阶段化路径
   - M6 工具与反馈：`list_growth_directions` / `get_capability_gap` / `get_recommendation_reasons` / `get_path_plan` / `submit_recommendation_feedback` + `/api/recommendation-feedback`
   - M7 `chat_test` 调试工作台：左侧对话 + 右侧画像/候选/能力/推荐/工具/RAG 监控；确认卡片位于输入框上方；SSE 解析抽到 `external/static/sse-client.js`
-- **审核整改（2026-09-23）**：画像确认续答纳入聊天额度且重复确认不再触发 LLM；候选确认改为“先原子抢占 PENDING→CONFIRMED（SQL 同时校验 expires_at > 确认时间），再在同一事务写画像”，并发拒绝/过期/冲突不会留下未确认写入；`PromptComposer` 让画像提取/方向解释/路径建议 Prompt 真正参与流程，版本写入 `chat_messages.prompt_version` 与 SSE `prompt_versions`；能力状态改为当前画像投影（删技能即删标签，对象经历保留证据）；调试面板支持 RAG `data.items`、评分明细、资源来源与 `needs_review`、工具耗时和错误详情；M4 预检改走 `DataImportService` 并记录真实未匹配项；推荐反馈校验方向存在；实际调用推荐工具后自动补上方向解释/路径建议 Prompt；修正画像页 experience 输入框 placeholder 的引号转义
-- 383 个自动化测试，全部通过
+- **审核整改（2026-09-23）**：画像确认续答纳入聊天额度且重复确认不再触发 LLM；候选确认改为“先原子抢占 PENDING→CONFIRMED（SQL 同时校验 expires_at > 确认时间），再在同一事务写画像”，并发拒绝/过期/冲突不会留下未确认写入；`PromptComposer` 让画像提取/方向解释/路径建议 Prompt 真正参与流程，版本写入 `chat_messages.prompt_version` 与 SSE `prompt_versions`；能力状态改为当前画像投影（删技能即删标签，对象经历保留证据）；调试面板支持 RAG `data.items`、评分明细、资源来源与 `needs_review`、工具耗时和错误详情；M4 预检改走 `DataImportService` 并记录真实未匹配项；推荐反馈校验方向存在；实际调用推荐工具后自动补上方向解释/路径建议 Prompt；修正画像页 experience 输入框 placeholder 的引号转义；确认卡片在决策后移除并把 Agent 续答显示在对话中，SSE 事件丢失时由本轮结束后的 refresh 兜底
+- 384 个自动化测试，全部通过
 
 ### 下一阶段目标
 

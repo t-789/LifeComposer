@@ -207,8 +207,8 @@
             <div class="stat-item"><span class="stat-num">7</span><span class="stat-label">Milestone</span></div>
             <div class="stat-item"><span class="stat-num">4</span><span class="stat-label">新增/扩展表</span></div>
             <div class="stat-item"><span class="stat-num">5</span><span class="stat-label">新增 Agent 工具</span></div>
-            <div class="stat-item"><span class="stat-num">47</span><span class="stat-label">新增自动化测试</span></div>
-            <div class="stat-item"><span class="stat-num">383</span><span class="stat-label">自动化测试</span></div>
+            <div class="stat-item"><span class="stat-num">48</span><span class="stat-label">新增自动化测试</span></div>
+            <div class="stat-item"><span class="stat-num">384</span><span class="stat-label">自动化测试</span></div>
         </div>
 
         <div class="improvement-list">
@@ -275,6 +275,7 @@
             <li>候选确认改为原子竞争：先抢占 PENDING→CONFIRMED（SQL 内同时校验 <code>expires_at &gt; 确认时间</code>），再在同一事务写画像；并发拒绝/过期/冲突与版本冲突都不会写入未确认内容，覆盖清理与抢占之间的过期窗口。</li>
             <li>推荐/路径 Prompt 不再只靠关键词：实际调用 <code>list_growth_directions</code> / <code>get_capability_gap</code> / <code>get_recommendation_path</code> 等工具后，后续轮次自动补上方向解释与路径建议契约；同时补充“蓝桥杯、怎么准备”等同义/比赛表达。</li>
             <li>修复 <code>/front/profile</code> 经历输入框 placeholder 中未转义双引号导致 HTML 属性截断的问题。</li>
+            <li>修复画像确认卡片显示时机与结果位置：<code>awaiting_confirmation</code> 后本轮结束即自动拉取并渲染候选（不依赖 SSE 事件不丢），决策成功后移除确认卡片并把 Agent 续答作为普通 assistant 消息显示在对话中。</li>
         </ul>
 
         <h2>文档与兼容性</h2>

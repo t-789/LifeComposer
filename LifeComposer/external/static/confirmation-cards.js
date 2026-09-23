@@ -134,10 +134,25 @@
                 setCardStatus(card, '失败：' + (body.message || body.error || response.status));
                 return;
             }
-            setCardStatus(card, '结果：' + body.status + (body.agentMessage ? ' · ' + body.agentMessage : ''));
-            if (state.onDecided) state.onDecided(body);
+            // The agent continuation belongs in the conversation, not inside the
+            // confirmation card. Remove the card after the callback so the
+            // decision is visible exactly once, in the chat stream.
+            try {
+                if (state.onDecided) state.onDecided(body);
+            } finally {
+                removeCard(card, candidateId);
+            }
         } catch (e) {
             setCardStatus(card, '网络错误，请重试');
+        }
+    }
+
+    function removeCard(card, candidateId) {
+        if (candidateId) {
+            delete state.rendered[candidateId];
+        }
+        if (card && card.parentNode) {
+            card.parentNode.removeChild(card);
         }
     }
 

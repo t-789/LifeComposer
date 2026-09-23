@@ -547,9 +547,10 @@
             LifeComposerConfirmation.init({
                 area: document.getElementById("confirmationArea"),
                 onDecided: function (result) {
-                    if (result && result.agentMessage) {
-                        appendMessage("assistant", result.agentMessage);
-                    }
+                    var text = (result && result.agentMessage)
+                        ? result.agentMessage
+                        : ("画像变更已处理：" + (result && result.status ? result.status : "UNKNOWN"));
+                    appendMessage("assistant", text);
                     LifeComposerDebug.refreshProfile();
                     LifeComposerDebug.refreshCandidates();
                 }
@@ -621,6 +622,11 @@
             } finally {
                 stopThinking();
                 sendBtn.disabled = false;
+                // Fallback: even if the awaiting_confirmation event was missed,
+                // pending candidates are fetched and rendered without a page refresh.
+                if (window.LifeComposerConfirmation) {
+                    LifeComposerConfirmation.refresh();
+                }
                 scrollToBottom();
             }
         }
@@ -697,6 +703,9 @@
                     break;
                 case "done":
                     stopThinking();
+                    if (window.LifeComposerConfirmation) {
+                        LifeComposerConfirmation.refresh();
+                    }
                     if (window.LifeComposerDebug) {
                         LifeComposerDebug.refreshProfile();
                         LifeComposerDebug.refreshCandidates();

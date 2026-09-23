@@ -248,6 +248,31 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    void emitsProfileChangeProposalAndStopsBeforeNextLlmRound() {
+        List<ChatMessage> stored = new ArrayList<>();
+        ChatMessageRepository repository = mockRepository(stored);
+
+        ScriptedLlmClient client = new ScriptedLlmClient(List.of(
+                proposeToolCallResponse(),
+                textResponse("should not be used")));
+        LlmClientFactory factory = mock(LlmClientFactory.class);
+        when(factory.getClient("chat")).thenReturn(client);
+
+        ToolRegistry registry = new ToolRegistry(List.of(new FakeProposeProfileUpdateTool()));
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                repository, factory, registry, new AppSecurityProperties());
+        RecordingAgentEventListener listener = new RecordingAgentEventListener();
+
+        orchestrator.streamMessage(1, "我会 C++ 和 Python", listener);
+
+        assertEquals(1, listener.proposalEvents, "应发送 profile_change_proposal");
+        assertEquals(1, listener.awaitingEvents, "应发送 awaiting_confirmation");
+        assertTrue(listener.proposalJson.contains("chg_test"), "事件应携带候选 id");
+        assertEquals(1, client.requests.size(),
+                "awaiting confirmation 后本轮应结束，不再发起下一轮 LLM 调用");
+    }
+
+    @Test
     void injectsRecommendationContractWhenRecommendationToolWasCalled() {
         List<ChatMessage> stored = new ArrayList<>();
         ChatMessageRepository repository = mockRepository(stored);
@@ -311,6 +336,14 @@ class AgentOrchestratorTest {
         return repository;
     }
 
+    private LlmResponseDto proposeToolCallResponse() {
+        LlmResponseDto response = new LlmResponseDto();
+        response.setToolCalls(List.of(new LlmToolCall(
+                "call-1", "propose_profile_update",
+                "{\"changes\":[{\"field\":\"skillsJson\",\"newValue\":\"[\\\"C++\\\",\\\"Python\\\"]\"}]}")));
+        return response;
+    }
+
     private LlmResponseDto recommendationToolCallResponse() {
         LlmResponseDto response = new LlmResponseDto();
         response.setToolCalls(List.of(new LlmToolCall(
@@ -362,6 +395,11 @@ class AgentOrchestratorTest {
             int current = Math.min(index, responses.size() - 1);
             index++;
             return responses.get(current);
+        }
+
+        @Override
+        public void chatStream(LlmRequestDto request, LlmStreamListener listener) {
+            listener.onComplete(chat(request));
         }
 
         @Override
@@ -452,8 +490,22 @@ class AgentOrchestratorTest {
 
         private int thinkingStarts;
         private int thinkingEnds;
+        private int proposalEvents;
+        private int awaitingEvents;
+        private String proposalJson;
         private final List<String> tokens = new ArrayList<>();
         private final List<String> order = new ArrayList<>();
+
+        @Override
+        public void onProfileChangeProposal(String proposalsJson) {
+            proposalEvents++;
+            proposalJson = proposalsJson;
+        }
+
+        @Override
+        public void onAwaitingConfirmation(String proposalsJson) {
+            awaitingEvents++;
+        }
 
         @Override
         public void onThinkingStart(java.time.Instant startedAt) {
@@ -471,6 +523,43 @@ class AgentOrchestratorTest {
         public void onToken(String delta) {
             tokens.add(delta);
             order.add("token");
+        }
+    }
+
+    private static final class FakeProposeProfileUpdateTool implements AgentTool {
+
+        @Override
+        public String name() {
+            return "propose_profile_update";
+        }
+
+        @Override
+        public String description() {
+            return "提议画像变更";
+        }
+
+        @Override
+        public String displayDescription() {
+            return "提议画像变更";
+        }
+
+        @Override
+        public Map<String, Object> parameterSchema() {
+            return Map.of("type", "object", "properties", Map.of(), "additionalProperties", false);
+        }
+
+        @Override
+        public ToolResult execute(AgentToolContext context, JsonObject arguments) {
+            return ToolResult.ok(Map.of(
+                    "status", "PENDING_CONFIRMATION",
+                    "awaitingConfirmation", true,
+                    "created", 1,
+                    "candidates", List.of(Map.of(
+                            "candidateId", "chg_test",
+                            "field", "skillsJson",
+                            "oldValue", "",
+                            "newValue", "[\"C++\",\"Python\"]",
+                            "status", "PENDING_CONFIRMATION"))));
         }
     }
 
