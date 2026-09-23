@@ -278,6 +278,8 @@
             <li>修复画像确认卡片显示时机与结果位置：<code>awaiting_confirmation</code> 后本轮结束即自动拉取并渲染候选（不依赖 SSE 事件不丢），决策成功后移除确认卡片并把 Agent 续答作为普通 assistant 消息显示在对话中。</li>
             <li>修复多字段画像依次确认失败：集合字段并集合并、标量字段在快照值未变时可应用、已生效重复候选幂等，只有同字段被改成不同值才返回 CONFLICT。</li>
             <li>推荐工具不再把原始 <code>scoreBreakdown</code>/<code>goalRelevance</code> 等英文字段名交给 LLM，改为返回中文维度 <code>explanationHints</code>；Prompt 明确禁止向用户输出这些内部键名。</li>
+            <li>多候选画像确认改为“全部确认完再统一续答”：仍有待确认卡片时返回 <code>continuationDeferred</code> 且不调用 LLM、不消耗额度；最后一条处理完用批次上下文一次性续答。</li>
+            <li>Prompt 增加数据忠实度约束：Agent 只能依据工具返回的数据回答，不得用自身知识补全或推断资源、日期、链接与竞赛要求；<code>needs_review</code> 数据只提示“需要人工复核”，不推测具体字段。</li>
         </ul>
 
         <h2>文档与兼容性</h2>

@@ -16,6 +16,8 @@ public class ProfileChangeCandidate {
 
     private Long id;
     private String candidateId;
+    /** One propose call = one batch; used to defer the agent continuation until all cards are decided. */
+    private String batchId;
     private Long userId;
     private String fieldName;
     private String oldValue;

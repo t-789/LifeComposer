@@ -70,6 +70,9 @@ public class ProfileChangeService {
         long baseVersion = current == null || current.getVersion() == null ? 0L : current.getVersion();
         String expiresAt = LocalDateTime.now(clock).plusMinutes(properties.getTtlMinutes()).format(DB_TIME);
 
+        // One propose call is one batch: the agent continuation waits until every
+        // candidate in the batch (and any other pending card) is decided.
+        String batchId = "batch_" + UUID.randomUUID().toString().replace("-", "");
         List<ProfileChangeCandidate> created = new ArrayList<>();
         for (ProfileChangeProposal proposal : proposals) {
             String field = proposal.field() == null ? "" : proposal.field().trim();
@@ -86,6 +89,7 @@ public class ProfileChangeService {
             }
             ProfileChangeCandidate candidate = new ProfileChangeCandidate();
             candidate.setCandidateId("chg_" + UUID.randomUUID().toString().replace("-", ""));
+            candidate.setBatchId(batchId);
             candidate.setUserId(userId);
             candidate.setFieldName(field);
             candidate.setOldValue(oldValue);
@@ -113,6 +117,61 @@ public class ProfileChangeService {
     public ProfileChangeCandidateDto getOwned(Long userId, String candidateId) {
         ProfileChangeCandidate candidate = requireOwned(userId, candidateId);
         return toDto(candidate);
+    }
+
+    /** Expires stale candidates, then returns how many cards are still pending. */
+    public int countPending(Long userId) {
+        candidateRepository.expireStale(now());
+        return candidateRepository.countPendingByUserId(userId);
+    }
+
+    /**
+     * Builds one context block for a completed batch so the agent sees all
+     * confirmed/rejected changes together instead of once per card.
+     */
+    public String batchContext(Long userId, String batchId) {
+        if (batchId == null || batchId.isBlank()) {
+            return null;
+        }
+        List<ProfileChangeCandidate> batch = candidateRepository.findByBatchIdAndUserId(batchId, userId);
+        if (batch.isEmpty()) {
+            return null;
+        }
+        StringBuilder builder = new StringBuilder("用户刚完成一批画像变更处理（共 ")
+                .append(batch.size()).append(" 条）：");
+        int index = 1;
+        for (ProfileChangeCandidate candidate : batch) {
+            builder.append("\n").append(index++).append(". ").append(fieldLabel(candidate.getFieldName()))
+                    .append("：");
+            if (ProfileChangeCandidate.CONFIRMED.equals(candidate.getStatus())) {
+                builder.append("用户已确认，已写入正式画像（版本 v").append(candidate.getMergedVersion()).append("）");
+            } else if (ProfileChangeCandidate.REJECTED.equals(candidate.getStatus())) {
+                builder.append("用户已拒绝");
+                if (candidate.getDecisionReason() != null && !candidate.getDecisionReason().isBlank()) {
+                    builder.append("，理由：").append(candidate.getDecisionReason());
+                }
+                builder.append("；该信息不得当作事实");
+            } else if (ProfileChangeCandidate.EXPIRED.equals(candidate.getStatus())) {
+                builder.append("已过期，未写入画像");
+            } else if (ProfileChangeCandidate.CONFLICT.equals(candidate.getStatus())) {
+                builder.append("因版本冲突未写入画像");
+            } else {
+                builder.append(candidate.getStatus());
+            }
+        }
+        builder.append("\n请基于这批量结果继续回答；不要重复询问已经处理的信息。");
+        return builder.toString();
+    }
+
+    private String fieldLabel(String fieldName) {
+        return switch (fieldName) {
+            case "availableTime" -> "可投入时间";
+            case "skillsJson" -> "技能";
+            case "interestsJson" -> "兴趣";
+            case "experiencesJson" -> "经历";
+            case "goals" -> "目标";
+            default -> fieldName;
+        };
     }
 
     @Transactional
@@ -244,7 +303,8 @@ public class ProfileChangeService {
         candidate.setDecidedAt(decidedAt);
         LOG.info("Profile change already applied: user={} field={} version={}",
                 userId, candidate.getFieldName(), currentVersion);
-        return new DecisionResult(candidate, contextFor(candidate), true);
+        // Already applied: do not trigger another agent continuation.
+        return new DecisionResult(candidate, contextFor(candidate), false);
     }
 
     private DecisionResult markConflictFromClaim(Long userId, ProfileChangeCandidate candidate, String decidedAt) {

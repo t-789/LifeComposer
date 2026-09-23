@@ -322,14 +322,30 @@ class ProfileChangeFlowTest extends BaseControllerTest {
                 new ProfileChangeService.ProfileChangeProposal("availableTime", "10 hours/week", "时间")), "测试");
         assertEquals(4, created.size(), "同一轮提议应生成 4 个候选");
 
-        for (var candidate : created) {
-            mockMvc.perform(post("/api/profiles/change-candidates/" + candidate.getCandidateId() + "/decision")
+        for (int i = 0; i < created.size(); i++) {
+            var action = mockMvc.perform(
+                    post("/api/profiles/change-candidates/" + created.get(i).getCandidateId() + "/decision")
                             .session(session).header("User-Agent", UA)
                             .contentType("application/json")
-                            .content("{\"decision\":\"CONFIRM\"}"))
-                    .andExpect(status().isOk())
+                            .content("{\"decision\":\"CONFIRM\"}"));
+            action.andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value("CONFIRMED"));
+            if (i < created.size() - 1) {
+                action.andExpect(jsonPath("$.continuationDeferred").value(true));
+            } else {
+                action.andExpect(jsonPath("$.continuationDeferred").value(false));
+            }
         }
+
+        Integer usedAfterBatch = jdbcTemplate.queryForObject(
+                "SELECT request_count FROM chat_usage_daily WHERE user_id = ? AND usage_date = ?",
+                Integer.class, id, chatQuotaService.today());
+        assertEquals(1, usedAfterBatch, "整批确认只应在全部处理完后消耗 1 次续答额度");
+
+        String batchContext = profileChangeService.batchContext(id, created.get(0).getBatchId());
+        assertNotNull(batchContext, "批次 context 应可用于一次性续答");
+        assertTrue(batchContext.contains("技能"));
+        assertTrue(batchContext.contains("目标"));
 
         mockMvc.perform(get("/api/profiles/me").session(session).header("User-Agent", UA))
                 .andExpect(status().isOk())
@@ -375,11 +391,16 @@ class ProfileChangeFlowTest extends BaseControllerTest {
                         .contentType("application/json")
                         .content("{\"decision\":\"CONFIRM\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CONFIRMED"));
+                .andExpect(jsonPath("$.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.continuationDeferred").value(false));
 
         Long versionAfterDuplicate = jdbcTemplate.queryForObject(
                 "SELECT version FROM user_profiles WHERE user_id = ?", Long.class, id);
         assertEquals(versionAfterFirst, versionAfterDuplicate, "已生效的重复候选不应再次写画像");
+        Integer usedAfterDuplicate = jdbcTemplate.queryForObject(
+                "SELECT request_count FROM chat_usage_daily WHERE user_id = ? AND usage_date = ?",
+                Integer.class, id, chatQuotaService.today());
+        assertEquals(1, usedAfterDuplicate, "已生效的重复候选不应再次调用 LLM");
     }
 
     @Test

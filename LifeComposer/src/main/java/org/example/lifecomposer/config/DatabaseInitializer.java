@@ -120,6 +120,7 @@ public class DatabaseInitializer {
         capabilityReferenceRepository.createTableIfNeeded();
         chatUsageRepository.createTableIfNeeded();
         profileChangeCandidateRepository.createTableIfNeeded();
+        profileChangeCandidateRepository.migrateSchema();
         userCapabilityStateRepository.createTableIfNeeded();
         recommendationFeedbackRepository.createTableIfNeeded();
 

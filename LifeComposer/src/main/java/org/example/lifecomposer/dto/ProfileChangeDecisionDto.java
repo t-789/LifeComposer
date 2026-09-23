@@ -18,6 +18,8 @@ public class ProfileChangeDecisionDto {
     private Boolean agentAnswered;
     /** True when the decision succeeded but the agent continuation was blocked by chat quota. */
     private Boolean quotaExceeded;
+    /** True when more pending cards exist, so the LLM continuation was postponed. */
+    private Boolean continuationDeferred;
     private Long retryAfterSeconds;
     /** Prompt versions used for the continuation (traceability). */
     private java.util.Map<String, String> promptVersions;

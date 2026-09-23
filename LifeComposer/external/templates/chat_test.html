@@ -550,7 +550,11 @@
                     var text = (result && result.agentMessage)
                         ? result.agentMessage
                         : ("画像变更已处理：" + (result && result.status ? result.status : "UNKNOWN"));
-                    appendMessage("assistant", text);
+                    if (result && result.continuationDeferred) {
+                        appendMessage("system", text);
+                    } else {
+                        appendMessage("assistant", text);
+                    }
                     LifeComposerDebug.refreshProfile();
                     LifeComposerDebug.refreshCandidates();
                 }

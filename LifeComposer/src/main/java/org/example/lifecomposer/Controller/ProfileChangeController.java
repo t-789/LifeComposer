@@ -82,29 +82,42 @@ public class ProfileChangeController {
 
         boolean agentAnswered = false;
         boolean quotaExceeded = false;
+        boolean continuationDeferred = false;
         long retryAfterSeconds = 0L;
         String agentMessage;
 
+        // Defer the LLM output until every pending card is resolved, otherwise a
+        // multi-field proposal would produce one answer per click.
+        int pending = profileChangeService.countPending(userId.longValue());
         if (result.newlyDecided()) {
-            // The agent continuation is an AI call: it must obey the same
-            // per-user minute/daily quota as /api/chat/*. The profile decision
-            // itself has already been persisted, so quota failure only skips
-            // the continuation instead of failing the business operation.
-            ChatQuotaDecision quota = chatQuotaService.tryConsume(userId);
-            if (!quota.allowed()) {
-                quotaExceeded = true;
-                retryAfterSeconds = quota.retryAfterSeconds();
-                agentMessage = fallbackMessage(result) + "（AI 续答额度已用完：" + quota.message() + "）";
+            if (pending > 0) {
+                continuationDeferred = true;
+                agentMessage = "还有 " + pending + " 条画像变更待确认，全部处理完我再统一给出建议。";
             } else {
-                try {
-                    ChatResponse chat = chatService.continueAfterProfileDecision(userId, result.agentContext());
-                    agentMessage = chat.getContent();
-                    agentAnswered = agentMessage != null && !agentMessage.isBlank();
-                    response.setPromptVersions(chat.getPromptVersions());
-                } catch (LlmUnavailableException e) {
-                    agentMessage = fallbackMessage(result);
-                } catch (RuntimeException e) {
-                    agentMessage = fallbackMessage(result);
+                // The continuation is an AI call: it obeys the same per-user
+                // minute/daily quota as /api/chat/*. The decision is already
+                // persisted, so quota failure only skips the continuation.
+                ChatQuotaDecision quota = chatQuotaService.tryConsume(userId);
+                if (!quota.allowed()) {
+                    quotaExceeded = true;
+                    retryAfterSeconds = quota.retryAfterSeconds();
+                    agentMessage = fallbackMessage(result) + "（全部候选已处理，但 AI 续答额度已用完：" + quota.message() + "）";
+                } else {
+                    String context = profileChangeService.batchContext(
+                            userId.longValue(), result.candidate().getBatchId());
+                    if (context == null || context.isBlank()) {
+                        context = result.agentContext();
+                    }
+                    try {
+                        ChatResponse chat = chatService.continueAfterProfileDecision(userId, context);
+                        agentMessage = chat.getContent();
+                        agentAnswered = agentMessage != null && !agentMessage.isBlank();
+                        response.setPromptVersions(chat.getPromptVersions());
+                    } catch (LlmUnavailableException e) {
+                        agentMessage = fallbackMessage(result);
+                    } catch (RuntimeException e) {
+                        agentMessage = fallbackMessage(result);
+                    }
                 }
             }
         } else {
@@ -114,6 +127,7 @@ public class ProfileChangeController {
         response.setAgentMessage(agentMessage);
         response.setAgentAnswered(agentAnswered);
         response.setQuotaExceeded(quotaExceeded);
+        response.setContinuationDeferred(continuationDeferred);
         response.setRetryAfterSeconds(retryAfterSeconds);
         return ResponseEntity.ok(response);
     }

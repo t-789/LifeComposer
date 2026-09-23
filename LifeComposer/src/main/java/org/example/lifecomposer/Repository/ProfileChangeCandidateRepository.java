@@ -25,6 +25,7 @@ public class ProfileChangeCandidateRepository {
             ProfileChangeCandidate candidate = new ProfileChangeCandidate();
             candidate.setId(rs.getLong("id"));
             candidate.setCandidateId(rs.getString("candidate_id"));
+            candidate.setBatchId(rs.getString("batch_id"));
             candidate.setUserId(rs.getLong("user_id"));
             candidate.setFieldName(rs.getString("field_name"));
             candidate.setOldValue(rs.getString("old_value"));
@@ -48,6 +49,7 @@ public class ProfileChangeCandidateRepository {
                 CREATE TABLE IF NOT EXISTS profile_change_candidates (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     candidate_id TEXT NOT NULL UNIQUE,
+                    batch_id TEXT,
                     user_id INTEGER NOT NULL,
                     field_name TEXT NOT NULL,
                     old_value TEXT,
@@ -68,14 +70,28 @@ public class ProfileChangeCandidateRepository {
                 + "ON profile_change_candidates(user_id, status)");
     }
 
+    /** Idempotent migration for databases created before batch ids. */
+    public void migrateSchema() {
+        if (!hasColumn("batch_id")) {
+            jdbcTemplate.execute("ALTER TABLE profile_change_candidates ADD COLUMN batch_id TEXT");
+        }
+    }
+
+    private boolean hasColumn(String columnName) {
+        List<String> columns = jdbcTemplate.query("PRAGMA table_info(profile_change_candidates)",
+                (rs, rowNum) -> rs.getString("name"));
+        return columns.stream().anyMatch(col -> col.equalsIgnoreCase(columnName));
+    }
+
     public void insert(ProfileChangeCandidate candidate) {
         jdbcTemplate.update("""
                         INSERT INTO profile_change_candidates
-                            (candidate_id, user_id, field_name, old_value, new_value, rationale, source,
+                            (candidate_id, batch_id, user_id, field_name, old_value, new_value, rationale, source,
                              status, base_version, created_at, expires_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
                         """,
                 candidate.getCandidateId(),
+                candidate.getBatchId(),
                 candidate.getUserId(),
                 candidate.getFieldName(),
                 candidate.getOldValue(),
@@ -102,6 +118,12 @@ public class ProfileChangeCandidateRepository {
                 "SELECT * FROM profile_change_candidates WHERE user_id = ? AND status = ? "
                         + "ORDER BY id ASC",
                 ROW_MAPPER, userId, status);
+    }
+
+    public List<ProfileChangeCandidate> findByBatchIdAndUserId(String batchId, Long userId) {
+        return jdbcTemplate.query(
+                "SELECT * FROM profile_change_candidates WHERE batch_id = ? AND user_id = ? ORDER BY id ASC",
+                ROW_MAPPER, batchId, userId);
     }
 
     public List<ProfileChangeCandidate> findPendingByUserId(Long userId) {
