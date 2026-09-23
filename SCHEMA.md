@@ -230,7 +230,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 |------|------|------|------|
 | `id` | auto | Primary key | 1 |
 | `user_id` | 是 | 所属用户 ID | 5 |
-| `prompt_version` | v0.1 M3：assistant 行使用的提示词版本指纹（如 `CHAT_SYSTEM=2;PROFILE_EXTRACTION=2`），user/tool 行为 NULL；旧库由 `ChatMessageRepository.migrateSchema()` 幂等补列 |
+| `prompt_version` | v0.1 M3：assistant 行使用的提示词版本指纹（如 `CHAT_SYSTEM=3;PROFILE_EXTRACTION=2`），user/tool 行为 NULL；旧库由 `ChatMessageRepository.migrateSchema()` 幂等补列 |
 | `role` | 是 | 'user' 用户消息；'assistant' AI 回复或工具调用请求；'tool' 工具执行结果 | 'user' |
 | `content` | 是 | 消息内容。普通文本直接存储；tool-call 场景为结构化 JSON 字符串（见下方 v0.0.4 说明） | '你好，请问有什么可以帮助你的？' |
 | `create_time` | 是 | 创建时间 | 2026-06-28 12:00:00 |

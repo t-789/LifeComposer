@@ -89,8 +89,10 @@ class RecommendationAgentToolsTest {
         assertTrue(result.ok());
         Map<?, ?> data = (Map<?, ?>) result.data();
         assertEquals("algorithm_contest", data.get("directionId"));
-        assertNotNull(data.get("scoreBreakdown"));
         assertNotNull(data.get("matchedTags"));
+        assertFalse(data.containsKey("scoreBreakdown"), "不应把原始评分键暴露给 LLM");
+        assertNotNull(data.get("explanationHints"));
+        assertTrue(((Map<?, ?>) data.get("explanationHints")).containsKey("目标相关性"));
     }
 
     @Test
@@ -100,16 +102,20 @@ class RecommendationAgentToolsTest {
                 new AgentToolContext((int) USER_ID), "{\"directionId\":\"algorithm_contest\"}");
         assertTrue(gap.ok());
         Map<?, ?> gapData = (Map<?, ?>) gap.data();
-        assertTrue(((java.util.List<?>) gapData.get("matchedTags")).contains("编程基础"));
+        assertTrue(((java.util.List<?>) gapData.get("已匹配标签")).contains("编程基础"));
 
         ToolResult path = toolRegistry.execute("get_path_plan",
                 new AgentToolContext((int) USER_ID), "{\"directionId\":\"algorithm_contest\"}");
         assertTrue(path.ok());
-        org.example.lifecomposer.dto.PathPlanDto plan =
-                (org.example.lifecomposer.dto.PathPlanDto) path.data();
-        assertEquals("algorithm_contest", plan.getDirectionId());
-        assertNotNull(plan.getGapTasks());
-        assertNotNull(plan.getResources());
+        Map<?, ?> plan = (Map<?, ?>) path.data();
+        assertEquals("algorithm_contest", plan.get("directionId"));
+        assertNotNull(plan.get("gapTasks"));
+        assertNotNull(plan.get("resources"));
+        java.util.List<?> resources = (java.util.List<?>) plan.get("resources");
+        assertFalse(resources.isEmpty());
+        Map<?, ?> resource = (Map<?, ?>) resources.get(0);
+        assertTrue(resource.containsKey("数据质量"), "资源数据质量应使用中文键");
+        assertFalse(resource.containsKey("dataQuality"), "不应向 LLM 暴露 dataQuality 字段名");
     }
 
     @Test

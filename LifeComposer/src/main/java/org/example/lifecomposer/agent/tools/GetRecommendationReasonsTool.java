@@ -73,7 +73,17 @@ public class GetRecommendationReasonsTool implements AgentTool {
         data.put("matchedTags", selected.getMatchedTags());
         data.put("missingTags", selected.getMissingTags());
         data.put("timeNote", selected.getTimeNote());
-        data.put("scoreBreakdown", selected.getScoreBreakdown());
+        Map<String, Object> hints = new LinkedHashMap<>();
+        Map<String, Object> breakdown = selected.getScoreBreakdown();
+        hints.put("技能匹配", breakdown.get("skillMatch"));
+        hints.put("时间匹配", breakdown.get("timeFit"));
+        hints.put("目标相关性", breakdown.get("goalRelevance"));
+        hints.put("难度匹配", breakdown.get("difficultyFit"));
+        hints.put("准备周期", breakdown.get("preparationFit"));
+        data.put("explanationHints", hints);
+        data.put("displayInstruction",
+                "请使用 explanationHints 的中文维度向用户解释；禁止输出 scoreBreakdown、goalRelevance 等字段名。"
+                        + "如果某个维度为 0 是因为用户信息缺失，请说明缺少什么并追问。");
         data.put("scoringVersion", selected.getScoringVersion());
         data.put("informationSufficient", selected.isInformationSufficient());
         data.put("followUpQuestions", selected.getFollowUpQuestions());

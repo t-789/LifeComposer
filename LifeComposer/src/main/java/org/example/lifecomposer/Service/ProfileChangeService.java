@@ -169,14 +169,31 @@ public class ProfileChangeService {
         // Step 2 (same transaction): the claim is valid, now write the profile.
         UserProfile current = userProfileRepository.findByUserId(userId);
         long currentVersion = current == null || current.getVersion() == null ? 0L : current.getVersion();
-        if (!Objects.equals(currentVersion, candidate.getBaseVersion())) {
+        String currentFieldValue = readField(current, candidate.getFieldName());
+        String mergedValue = fieldValidator.mergeConfirmedValue(
+                candidate.getFieldName(), currentFieldValue, candidate.getNewValue());
+
+        // Already applied (duplicate candidate, or stale card completed after a
+        // continuation applied the same value): finish it without another write.
+        if (current != null && Objects.equals(mergedValue, currentFieldValue)) {
+            return markAlreadyApplied(userId, candidate, currentVersion, decidedAt);
+        }
+
+        // Collection fields are union-merged, so they are safe on a newer
+        // profile. Scalar fields require the candidate snapshot to still match
+        // the stored value; otherwise another request changed that field.
+        boolean snapshotUnchanged = Objects.equals(currentVersion, candidate.getBaseVersion())
+                || Objects.equals(currentFieldValue, candidate.getOldValue());
+        if (current == null) {
+            if (!Objects.equals(candidate.getBaseVersion(), 0L)) {
+                return markConflictFromClaim(userId, candidate, decidedAt);
+            }
+        } else if (!fieldValidator.isUnionMergeField(candidate.getFieldName()) && !snapshotUnchanged) {
             return markConflictFromClaim(userId, candidate, decidedAt);
         }
 
         UserProfile target = current == null ? new UserProfile() : current;
         target.setUserId(userId);
-        String mergedValue = fieldValidator.mergeConfirmedValue(
-                candidate.getFieldName(), readField(current, candidate.getFieldName()), candidate.getNewValue());
         applyField(target, candidate.getFieldName(), mergedValue);
 
         boolean saved;
@@ -206,6 +223,27 @@ public class ProfileChangeService {
         candidate.setDecidedAt(decidedAt);
         LOG.info("Profile change confirmed: user={} field={} version={}",
                 userId, candidate.getFieldName(), mergedVersion);
+        return new DecisionResult(candidate, contextFor(candidate), true);
+    }
+
+    /** Candidate value is already present in the current profile (idempotent confirmation). */
+    private DecisionResult markAlreadyApplied(Long userId, ProfileChangeCandidate candidate,
+                                              long currentVersion, String decidedAt) {
+        if (!candidateRepository.updateMergedVersion(candidate.getCandidateId(), userId, currentVersion)) {
+            throw new IllegalStateException("画像候选确认状态与画像写入不一致");
+        }
+        if ("skillsJson".equals(candidate.getFieldName())) {
+            UserProfile latest = userProfileRepository.findByUserId(userId);
+            if (latest != null) {
+                capabilityStateService.recordSkills(userId, latest.getSkillsJson(),
+                        latest.getExperiencesJson(), "CHAT_CONFIRMED");
+            }
+        }
+        candidate.setStatus(ProfileChangeCandidate.CONFIRMED);
+        candidate.setMergedVersion(currentVersion);
+        candidate.setDecidedAt(decidedAt);
+        LOG.info("Profile change already applied: user={} field={} version={}",
+                userId, candidate.getFieldName(), currentVersion);
         return new DecisionResult(candidate, contextFor(candidate), true);
     }
 

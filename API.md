@@ -101,7 +101,8 @@
 | POST | `/api/profiles/change-candidates/{candidateId}/decision` | 已登录 | body `{"decision":"CONFIRM"|"REJECT","reason":可选}`。确认后在 `WHERE user_id=? AND version=?` 条件下合并写入并递增版本；返回 status / mergedVersion / decidedAt / agentMessage。过期返回 200 + `EXPIRED`，快照版本冲突返回 200 + `CONFLICT`，重复提交幂等返回原状态 |
 
 - 聊天可提议字段由 `lifecomposer.profile-change.allowed-fields` 控制，默认仅 `availableTime,skillsJson,interestsJson,experiencesJson,goals`；学号、学院、专业、年级必须由正式表单填写。
-- **确认原子性**：确认时先执行 `UPDATE ... SET status='CONFIRMED', merged_version=NULL WHERE candidate_id=? AND status='PENDING_CONFIRMATION' AND expires_at > ?` 抢占候选，成功后才在同一事务内写 `user_profiles`。有效期条件与抢占在同一条 SQL 中，覆盖 `expireStale()` 与抢占之间的过期窗口。并发拒绝、过期或版本冲突导致抢占失败时，正式画像完全不会被修改；抢占后任何异常都会回滚候选状态。
+- **确认原子性**：确认时先执行 `UPDATE ... SET status='CONFIRMED', merged_version=NULL WHERE candidate_id=? AND status='PENDING_CONFIRMATION' AND expires_at > ?` 抢占候选，成功后才在同一事务内写 `user_profiles`。有效期条件与抢占在同一条 SQL 中，覆盖 `expireStale()` 与抢占之间的过期窗口。
+- **多候选依次确认**：同一轮提议可以生成多个候选。确认其中一个后，其余候选不会因为 `base_version` 变旧而直接失败：集合字段（技能/兴趣/经历/目标）按并集合并；标量字段（可投入时间）在快照值仍未被改动时也可应用。只有同一字段已被其他请求改成不同值时才返回 `CONFLICT`；值已生效的重复候选幂等返回 `CONFIRMED` 且不再写画像。并发拒绝、过期或版本冲突导致抢占失败时，正式画像完全不会被修改；抢占后任何异常都会回滚候选状态。
 - 候选有效期由 `lifecomposer.profile-change.ttl-minutes`（默认 30）控制；过期候选不会写入画像。
 - 决策后服务端发起一次短的 Agent 续答（`agentMessage`），把结构化结果交回模型；LLM 不可用时返回确定性兜底文案，决策本身仍已落库。
 - **AI 额度边界（审核整改）**：只有真正产生新决策（PENDING → CONFIRMED/REJECTED）的那一次请求才调用 Agent 续答，并经过 `ChatQuotaService` 与 `/api/chat/*` 相同的分钟/日额度。重复确认、已过期、冲突和跨用户请求是幂等业务操作，不再调用 LLM、不再消耗额度。额度耗尽时决策仍成功落库，响应含 `quotaExceeded:true` 与 `retryAfterSeconds`，仅跳过 AI 续答。
@@ -118,6 +119,7 @@
 
 - 评分权重、阈值和版本由 `lifecomposer.recommendation.*` 配置；方向与资源 id 来自 `src/main/resources/recommendation/directions.json`，均为可迁移数据，不硬编码在评分方法中。
 - 评分是确定性的；LLM 只解释 DTO，不重新发明分数或标签。
+- 面向用户时，Agent 禁止输出 `scoreBreakdown`、`goalRelevance`、`skillMatch`、`matchedTags` 等内部字段名；推荐工具额外返回 `explanationHints`（技能匹配/时间匹配/目标相关性/难度/准备周期），Agent 必须用中文维度解释，缺少信息时先追问。
 - M6 Agent 工具：`list_growth_directions` / `get_capability_gap` / `get_recommendation_reasons` / `get_path_plan` / `submit_recommendation_feedback`。
 
 ## 推荐反馈（v0.1 M6）

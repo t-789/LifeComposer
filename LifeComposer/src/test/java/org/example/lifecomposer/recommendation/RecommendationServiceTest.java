@@ -99,7 +99,7 @@ class RecommendationServiceTest {
         assertTrue(top.getMatchedTags().contains("编程基础"));
         assertNotNull(top.getScoreBreakdown().get("skillMatch"));
         assertEquals("experimental-v1", top.getScoringVersion());
-        assertEquals("1", top.getExplanationPromptVersion(),
+        assertEquals("2", top.getExplanationPromptVersion(),
                 "推荐结果应记录方向解释 Prompt 版本");
         assertTrue(top.isInformationSufficient());
     }
@@ -156,7 +156,7 @@ class RecommendationServiceTest {
         assertTrue(plan.getResources().stream().allMatch(r -> r.getDataQuality() != null));
         assertTrue(plan.getExpectedInvestment().contains("每周约 8 小时"));
         assertEquals("experimental-v1", plan.getScoringVersion());
-        assertEquals("1", plan.getSuggestionPromptVersion(),
+        assertEquals("2", plan.getSuggestionPromptVersion(),
                 "路径计划应记录路径建议 Prompt 版本");
     }
 

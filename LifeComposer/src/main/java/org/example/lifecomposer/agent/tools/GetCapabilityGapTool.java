@@ -32,6 +32,7 @@ public class GetCapabilityGapTool implements AgentTool {
     @Override
     public String description() {
         return "查看当前用户在某个成长方向上已经具备和仍然缺失的标准能力标签。"
+                + "返回中文键名，回答时不要输出 userTags/missingTags 等内部字段名。"
                 + "不传 directionId 时使用当前评分最高的方向。";
     }
 
@@ -66,10 +67,11 @@ public class GetCapabilityGapTool implements AgentTool {
         }
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("directionId", directionId);
-        data.put("userTags", gap.userTags());
-        data.put("requiredTags", gap.requiredTags());
-        data.put("matchedTags", gap.matchedTags());
-        data.put("missingTags", gap.missingTags());
+        data.put("你的能力标签", gap.userTags());
+        data.put("方向要求标签", gap.requiredTags());
+        data.put("已匹配标签", gap.matchedTags());
+        data.put("仍缺少标签", gap.missingTags());
+        data.put("displayInstruction", "用中文标签向用户说明已具备与仍缺少的能力；不要输出 userTags/missingTags 等字段名。");
         return ToolResult.ok(data);
     }
 }

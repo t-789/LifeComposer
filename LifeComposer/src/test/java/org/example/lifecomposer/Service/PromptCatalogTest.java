@@ -23,7 +23,7 @@ class PromptCatalogTest {
             assertNotNull(catalog.version(id));
             assertFalse(catalog.text(id).isBlank(), "empty prompt: " + id);
         }
-        assertEquals("2", catalog.version(PromptId.CHAT_SYSTEM));
+        assertEquals("3", catalog.version(PromptId.CHAT_SYSTEM));
     }
 
     @Test
@@ -59,7 +59,7 @@ class PromptCatalogTest {
         assertEquals(4, decision.versions().size());
         assertTrue(decision.systemPrompt().contains("path_suggestion"));
         String fingerprint = composer.fingerprint(decision.versions());
-        assertTrue(fingerprint.contains("CHAT_SYSTEM=2"));
+        assertTrue(fingerprint.contains("CHAT_SYSTEM=3"));
         assertTrue(fingerprint.contains("PROFILE_EXTRACTION=2"));
     }
 
@@ -74,6 +74,20 @@ class PromptCatalogTest {
         PromptComposer.ComposedPrompt unrelated = composer.forUserMessage("你好");
         assertFalse(unrelated.versions().containsKey("DIRECTION_EXPLANATION"));
         assertTrue(unrelated.versions().containsKey("PROFILE_EXTRACTION"));
+    }
+
+    @Test
+    void promptsForbidInternalKeyLeakage() {
+        String chat = catalog.text(PromptId.CHAT_SYSTEM);
+        assertTrue(chat.contains("goalRelevance"));
+        assertTrue(chat.contains("scoreBreakdown"));
+        assertTrue(chat.contains("不要把工具返回的 JSON 字段名"));
+        String direction = catalog.text(PromptId.DIRECTION_EXPLANATION);
+        assertTrue(direction.contains("goalRelevance"));
+        assertTrue(direction.contains("中文自然语言"));
+        String path = catalog.text(PromptId.PATH_SUGGESTION);
+        assertTrue(path.contains("dataQuality"));
+        assertTrue(path.contains("禁止原样输出"));
     }
 
     @Test

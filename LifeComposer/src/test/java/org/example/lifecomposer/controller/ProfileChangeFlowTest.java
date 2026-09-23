@@ -203,10 +203,10 @@ class ProfileChangeFlowTest extends BaseControllerTest {
                 new ProfileChangeService.ProfileChangeProposal("availableTime", "4 hours/week", "冲突测试")), "测试");
         String candidateId = created.get(0).getCandidateId();
 
-        // Formal PUT without a version still bumps the row version.
+        // Another request changes the SAME field, so this is a real conflict.
         mockMvc.perform(put("/api/profiles/me").session(session).header("User-Agent", UA)
                         .contentType("application/json")
-                        .content("{\"major\":\"软件工程\"}"))
+                        .content("{\"availableTime\":\"1 hour/week\"}"))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/profiles/change-candidates/" + candidateId + "/decision")
@@ -216,10 +216,9 @@ class ProfileChangeFlowTest extends BaseControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CONFLICT"));
 
-        Long count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM user_profiles WHERE user_id = ? AND available_time IS NOT NULL",
-                Long.class, id);
-        assertEquals(0L, count);
+        String stored = jdbcTemplate.queryForObject(
+                "SELECT available_time FROM user_profiles WHERE user_id = ?", String.class, id);
+        assertEquals("1 hour/week", stored, "冲突时应保留另一方写入的值，而不是候选值");
     }
 
     @Test
@@ -309,6 +308,78 @@ class ProfileChangeFlowTest extends BaseControllerTest {
 
         mockMvc.perform(get("/api/profiles/me").session(session).header("User-Agent", UA))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("multiple candidates from one multi-field proposal can be confirmed one by one")
+    void multipleCandidatesCanBeConfirmedSequentially() throws Exception {
+        MockHttpSession session = registerAndLogin("changeuser13", "pass123");
+        Long id = userId("changeuser13");
+        var created = profileChangeService.propose(id, List.of(
+                new ProfileChangeService.ProfileChangeProposal("skillsJson", "[\"Python\"]", "技能"),
+                new ProfileChangeService.ProfileChangeProposal("interestsJson", "[\"AI\"]", "兴趣"),
+                new ProfileChangeService.ProfileChangeProposal("goals", "[\"保研\"]", "目标"),
+                new ProfileChangeService.ProfileChangeProposal("availableTime", "10 hours/week", "时间")), "测试");
+        assertEquals(4, created.size(), "同一轮提议应生成 4 个候选");
+
+        for (var candidate : created) {
+            mockMvc.perform(post("/api/profiles/change-candidates/" + candidate.getCandidateId() + "/decision")
+                            .session(session).header("User-Agent", UA)
+                            .contentType("application/json")
+                            .content("{\"decision\":\"CONFIRM\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("CONFIRMED"));
+        }
+
+        mockMvc.perform(get("/api/profiles/me").session(session).header("User-Agent", UA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.skillsJson").value("[\"Python\"]"))
+                .andExpect(jsonPath("$.interestsJson").value("[\"AI\"]"))
+                .andExpect(jsonPath("$.goals").value("[\"保研\"]"))
+                .andExpect(jsonPath("$.availableTime").value("10 hours/week"));
+    }
+
+    @Test
+    @DisplayName("a duplicate candidate whose value is already applied is confirmed without another write")
+    void duplicateAlreadyAppliedCandidateIsIdempotent() throws Exception {
+        MockHttpSession session = registerAndLogin("changeuser14", "pass123");
+        Long id = userId("changeuser14");
+        var created = profileChangeService.propose(id, List.of(
+                new ProfileChangeService.ProfileChangeProposal("skillsJson", "[\"Python\"]", "技能")), "测试");
+        String candidateId = created.get(0).getCandidateId();
+
+        mockMvc.perform(post("/api/profiles/change-candidates/" + candidateId + "/decision")
+                        .session(session).header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content("{\"decision\":\"CONFIRM\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CONFIRMED"));
+        Long versionAfterFirst = jdbcTemplate.queryForObject(
+                "SELECT version FROM user_profiles WHERE user_id = ?", Long.class, id);
+
+        // Another card for the same value (e.g. the continuation proposed it again).
+        var duplicate = new org.example.lifecomposer.Entity.ProfileChangeCandidate();
+        duplicate.setCandidateId("chg_duplicate");
+        duplicate.setUserId(id);
+        duplicate.setFieldName("skillsJson");
+        duplicate.setOldValue(null);
+        duplicate.setNewValue("[\"Python\"]");
+        duplicate.setSource("chat");
+        duplicate.setStatus("PENDING_CONFIRMATION");
+        duplicate.setBaseVersion(0L);
+        duplicate.setExpiresAt("2099-01-01 00:00:00");
+        candidateRepository.insert(duplicate);
+
+        mockMvc.perform(post("/api/profiles/change-candidates/chg_duplicate/decision")
+                        .session(session).header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content("{\"decision\":\"CONFIRM\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CONFIRMED"));
+
+        Long versionAfterDuplicate = jdbcTemplate.queryForObject(
+                "SELECT version FROM user_profiles WHERE user_id = ?", Long.class, id);
+        assertEquals(versionAfterFirst, versionAfterDuplicate, "已生效的重复候选不应再次写画像");
     }
 
     @Test

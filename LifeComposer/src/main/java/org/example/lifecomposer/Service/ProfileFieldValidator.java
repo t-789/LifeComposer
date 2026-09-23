@@ -146,6 +146,17 @@ public class ProfileFieldValidator {
         }
     }
 
+    /**
+     * Fields whose confirmed value is merged into the current profile instead of
+     * overwriting it. They can be applied safely even when the candidate was
+     * created from an older profile version.
+     */
+    public boolean isUnionMergeField(String field) {
+        return STRING_ARRAY_FIELDS.contains(field)
+                || "experiencesJson".equals(field)
+                || "preferencesJson".equals(field);
+    }
+
     /** Union-merge for confirmed chat candidates: existing items first, deduplicated. */
     public String mergeConfirmedValue(String field, String currentValue, String confirmedValue) {
         if ("availableTime".equals(field) || "college".equals(field) || "major".equals(field)
