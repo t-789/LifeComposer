@@ -6,6 +6,9 @@ Disallow: /index
 Disallow: /user
 Disallow: /register
 Disallow: /login
+Disallow: /front/login
+Disallow: /front/register
+Disallow: /adminlogin
 Disallow: /forum
 Disallow: /feedback
 Disallow: /point

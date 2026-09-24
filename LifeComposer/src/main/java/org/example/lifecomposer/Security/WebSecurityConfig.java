@@ -78,6 +78,7 @@ public class WebSecurityConfig {
                         // per-method checks inside the controllers.
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/admin", "/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/front/login", "/front/register").permitAll()
                         .requestMatchers("/api/qa/**").authenticated()
                         // Review follow-up: self-service password change (also the
                         // only call a forced-change session can make).
@@ -101,7 +102,7 @@ public class WebSecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .logout(logout -> logout
                         .logoutUrl("/logout")
-                        .logoutSuccessUrl("/login?logout")
+                        .logoutSuccessUrl("/front/login?logout")
                         .invalidateHttpSession(true)
                         .clearAuthentication(true)
                 );

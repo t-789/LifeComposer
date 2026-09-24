@@ -13,8 +13,8 @@
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| POST | `/api/users/register` | 无（**需 CSRF**） | 注册（用户名 3-20 字符，密码 1-50，**注册不做密码强度校验**）。成功/失败均返回**纯文本**（`注册成功` / `注册失败，用户名可能已存在`）。每 IP 每分钟 10 次，超限 429 `REGISTER_RATE_LIMIT` |
-| POST | `/api/users/login` | 无（**需 CSRF**） | 登录并设置 session。返回 JSON：`message` / `username` / `type` / `passwordChangeRequired` / `tempPasswordExpiresAt`。密码错误返回 400 `BAD_CREDENTIALS`；账号被封禁返回 400 `LOGIN_REJECTED`；连续失败 5 次锁定 15 分钟并返回 429 `LOGIN_LOCKED`；临时密码过期返回 403 `TEMP_PASSWORD_EXPIRED`；`passwordChangeRequired=true` 时必须先访问 `/front/change-password` |
+| POST | `/api/users/register` | 无（**需 CSRF**） | 请求 `username`、`password`，可选 `email`（合法邮箱、≤100 字符）和 `realName`（≤50 字符）；新用户页用学号作为 `username` 且要求邮箱/姓名。旧客户端可不传；邮箱小写存储、大小写不敏感唯一，未做邮箱验证。成功/失败均返回**纯文本**（`注册成功` / `注册失败，用户名或邮箱可能已存在`）。每 IP 每分钟 10 次，超限 429 `REGISTER_RATE_LIMIT` |
+| POST | `/api/users/login` | 无（**需 CSRF**） | 请求中的 `username` 可为用户名/学号或已注册邮箱（3-100 字符）；登录并设置 session。返回 JSON：`message` / `username` / `type` / `passwordChangeRequired` / `tempPasswordExpiresAt`。密码错误返回 400 `BAD_CREDENTIALS`；账号被封禁返回 400 `LOGIN_REJECTED`；连续失败 5 次锁定 15 分钟并返回 429 `LOGIN_LOCKED`；临时密码过期返回 403 `TEMP_PASSWORD_EXPIRED`；`passwordChangeRequired=true` 时必须先访问 `/front/change-password` |
 | POST | `/api/users/logout` | 已登录 | 登出，清除 session。返回纯文本 `登出成功` |
 | GET | `/api/users/current` | 已登录 | 获取当前用户信息（id/username/type/avatar/**isBanned**/banEndTime）。未登录由过滤器链拦截 → **403** |
 | GET | `/api/users/all` | ADMIN | 获取所有用户（不含密码哈希）。该端点字段名是 `banned`（与 `/current` 的 `isBanned` 不同） |
@@ -262,7 +262,10 @@
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/` | 首页 |
-| GET | `/login` | 登录页 |
+| GET | `/front/login` | 知途用户登录页（公开） |
+| GET | `/front/register` | 知途用户注册页（公开；共用滑动面板模板） |
+| GET | `/adminlogin` | 管理员登录页（公开；登录后仍由 `ROLE_ADMIN` 保护 `/admin/**`） |
+| GET | `/login` | 旧入口，跳转至 `/front/login` |
 | GET | `/admin` | 运维控制台 · 总览 (ADMIN) |
 | GET | `/admin/user` | 运维控制台 · 用户与额度 (ADMIN) |
 | GET | `/admin/profile` | 运维控制台 · 用户画像 (ADMIN) |

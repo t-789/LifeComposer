@@ -2,7 +2,7 @@
 <html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
-    <title>登录</title>
+    <title>管理员登录 · 知途</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
         .login-container { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 0 12px rgba(0,0,0,.1); width: 360px; }
@@ -22,7 +22,7 @@
 </head>
 <body>
 <div class="login-container">
-    <div class="login-header"><h1>用户登录</h1></div>
+    <div class="login-header"><h1>管理员登录</h1></div>
 
     <div id="msg" style="display:none" class="alert"></div>
 
@@ -93,15 +93,11 @@
 
             showMsg('登录成功，正在跳转...', true);
 
-            const currentResp = await fetch('/api/users/current');
-            if (currentResp.ok) {
-                const user = await currentResp.json();
-                if (user.type === 2) {
-                    location.href = '/admin';
-                    return;
-                }
+            if (body.type === 2) {
+                location.href = '/admin';
+            } else {
+                showMsg('此入口仅供管理员使用，请访问用户登录页', false);
             }
-            location.href = '/';
         } catch (err) {
             showMsg('登录请求失败: ' + err.message, false);
         }

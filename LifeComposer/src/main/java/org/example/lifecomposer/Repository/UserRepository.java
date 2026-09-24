@@ -26,6 +26,8 @@ public class UserRepository {
             User user = new User();
             user.setId(rs.getInt("id"));
             user.setUsername(rs.getString("username"));
+            user.setEmail(rs.getString("email"));
+            user.setRealName(rs.getString("real_name"));
             user.setPasswordHash(rs.getString("password_hash"));
             user.setType(rs.getInt("type"));
             user.setBanned(rs.getBoolean("is_banned"));
@@ -46,6 +48,8 @@ public class UserRepository {
                 CREATE TABLE IF NOT EXISTS users (
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   username TEXT UNIQUE NOT NULL,
+                  email TEXT NULL,
+                  real_name TEXT NULL,
                   password_hash TEXT NOT NULL,
                   type INTEGER NOT NULL DEFAULT 1 CHECK(type IN (1,2)),
                   is_banned BOOLEAN NOT NULL DEFAULT 0,
@@ -63,6 +67,15 @@ public class UserRepository {
     }
 
     public void migrateUserSchema() {
+        // v0.1.1: legacy/demo/admin accounts have no known email or name.
+        if (!hasColumn("users", "email")) {
+            jdbcTemplate.execute("ALTER TABLE users ADD COLUMN email TEXT NULL");
+        }
+        if (!hasColumn("users", "real_name")) {
+            jdbcTemplate.execute("ALTER TABLE users ADD COLUMN real_name TEXT NULL");
+        }
+        jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_ci "
+                + "ON users(lower(email)) WHERE email IS NOT NULL");
         // Remove legacy column from old project structure.
         // SQLite (3.35+) supports DROP COLUMN. If runtime SQLite is older, this will be ignored safely.
 //        if (hasColumn("users", "credit")) {
@@ -133,12 +146,14 @@ public class UserRepository {
 
     public int insertUser(User user) {
         String sql = """
-                INSERT INTO users(username, password_hash, type, is_banned, ban_end_time, avatar, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users(username, email, real_name, password_hash, type, is_banned, ban_end_time, avatar, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         Timestamp now = new Timestamp(System.currentTimeMillis());
         return jdbcTemplate.update(sql,
                 user.getUsername(),
+                user.getEmail(),
+                user.getRealName(),
                 user.getPasswordHash(),
                 user.getType(),
                 Boolean.TRUE.equals(user.getBanned()),
@@ -155,6 +170,24 @@ public class UserRepository {
         } catch (EmptyResultDataAccessException e) {
             return null;
         }
+    }
+
+    public User findByEmail(String email) {
+        if (email == null) {
+            return null;
+        }
+        try {
+            return jdbcTemplate.queryForObject("SELECT * FROM users WHERE lower(email) = lower(?)",
+                    USER_ROW_MAPPER, email);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
+
+    public boolean usernameExistsIgnoringCase(String username) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM users WHERE lower(username) = lower(?)", Integer.class, username);
+        return count != null && count > 0;
     }
 
     public User findById(int id) {

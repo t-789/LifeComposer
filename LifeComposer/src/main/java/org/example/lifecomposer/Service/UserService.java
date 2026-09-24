@@ -6,6 +6,7 @@ import org.example.lifecomposer.Entity.UserType;
 import org.example.lifecomposer.config.AdminSecurityProperties;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
@@ -13,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Locale;
 
 @Service
 public class UserService {
@@ -49,21 +51,39 @@ public class UserService {
     }
 
     public boolean register(String username, String rawPassword) {
-        if (userRepository.findByUsername(username) != null) {
+        return register(username, rawPassword, null, null);
+    }
+
+    public boolean register(String username, String rawPassword, String email, String realName) {
+        String normalizedEmail = email == null || email.isBlank() ? null : email.trim().toLowerCase(Locale.ROOT);
+        if (userRepository.findByUsername(username) != null
+                || userRepository.findByEmail(username) != null
+                || (normalizedEmail != null && (userRepository.findByEmail(normalizedEmail) != null
+                || userRepository.usernameExistsIgnoringCase(normalizedEmail)))) {
             return false;
         }
 
         User user = new User();
         user.setUsername(username);
+        user.setEmail(normalizedEmail);
+        user.setRealName(realName == null || realName.isBlank() ? null : realName.trim());
         user.setPasswordHash(passwordEncoder.encode(rawPassword));
         user.setType(UserType.USER);
         user.setBanned(false);
 
-        return userRepository.insertUser(user) > 0;
+        try {
+            return userRepository.insertUser(user) > 0;
+        } catch (DataIntegrityViolationException duplicate) {
+            // The database unique constraints also protect concurrent registrations.
+            return false;
+        }
     }
 
     public User login(String username, String rawPassword) {
         User user = userRepository.findByUsername(username);
+        if (user == null) {
+            user = userRepository.findByEmail(username);
+        }
         if (user == null) {
             return null;
         }

@@ -76,9 +76,10 @@ public class UserController {
                             "message", "注册请求过于频繁，请稍后再试",
                             "retryAfterSeconds", retryAfter));
         }
-        boolean success = userService.register(request.getUsername(), request.getPassword());
+        boolean success = userService.register(request.getUsername(), request.getPassword(),
+                request.getEmail(), request.getRealName());
         if (!success) {
-            return ResponseEntity.badRequest().body("注册失败，用户名可能已存在");
+            return ResponseEntity.badRequest().body("注册失败，用户名或邮箱可能已存在");
         }
         return ResponseEntity.ok("注册成功");
     }
@@ -86,11 +87,18 @@ public class UserController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         String username = request.getUsername();
+        User account = userRepository.findByUsername(username);
+        if (account == null) {
+            account = userRepository.findByEmail(username);
+        }
+        // Lockout is shared by username and email for the same account.
+        String attemptKey = account == null ? username.toLowerCase(java.util.Locale.ROOT) : account.getUsername();
+        String auditName = account == null && username.contains("@") ? "<email>" : attemptKey;
         String clientIp = clientIp(httpRequest);
-        if (loginAttemptService.isLocked(username, clientIp)) {
-            long retryAfter = loginAttemptService.retryAfterSeconds(username, clientIp);
+        if (loginAttemptService.isLocked(attemptKey, clientIp)) {
+            long retryAfter = loginAttemptService.retryAfterSeconds(attemptKey, clientIp);
             LOG.warn("AUDIT event=login_locked username={} ip={} retryAfterSeconds={}",
-                    username, clientIp, retryAfter);
+                    auditName, clientIp, retryAfter);
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .header("Retry-After", String.valueOf(retryAfter))
                     .body(Map.of(
@@ -101,8 +109,8 @@ public class UserController {
         try {
             User user = userService.login(request.getUsername(), request.getPassword());
             if (user == null) {
-                loginAttemptService.recordFailure(username, clientIp);
-                LOG.warn("AUDIT event=login_failure username={} ip={}", username, clientIp);
+                loginAttemptService.recordFailure(attemptKey, clientIp);
+                LOG.warn("AUDIT event=login_failure username={} ip={}", auditName, clientIp);
                 return ResponseEntity.badRequest()
                         .body(Map.of("error", "BAD_CREDENTIALS", "message", "登录失败，用户名或密码错误"));
             }
@@ -111,17 +119,17 @@ public class UserController {
             // expires — after the deadline the account cannot log in any more.
             if (Boolean.TRUE.equals(user.getPasswordResetRequired())
                     && userService.isTemporaryPasswordExpired(user)) {
-                loginAttemptService.recordFailure(username, clientIp);
+                loginAttemptService.recordFailure(attemptKey, clientIp);
                 LOG.warn("AUDIT event=login_rejected_temp_password_expired username={} ip={}",
-                        username, clientIp);
+                        auditName, clientIp);
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("error", "TEMP_PASSWORD_EXPIRED",
                                 "message", "临时密码已过期，请联系管理员重新下发"));
             }
 
-            loginAttemptService.recordSuccess(username, clientIp);
+            loginAttemptService.recordSuccess(attemptKey, clientIp);
 
-            UserDetails userDetails = userDetailsService.loadUserByUsername(request.getUsername());
+            UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
             Authentication authentication = new UsernamePasswordAuthenticationToken(
                     userDetails,
                     userDetails.getPassword(),
@@ -157,9 +165,9 @@ public class UserController {
             body.put("tempPasswordExpiresAt", user.getTempPasswordExpiresAt());
             return ResponseEntity.ok(body);
         } catch (IllegalStateException e) {
-            loginAttemptService.recordFailure(username, clientIp);
+            loginAttemptService.recordFailure(attemptKey, clientIp);
             LOG.warn("AUDIT event=login_failure username={} ip={} reason={}",
-                    username, clientIp, e.getMessage());
+                    auditName, clientIp, e.getMessage());
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "LOGIN_REJECTED", "message", String.valueOf(e.getMessage())));
         }

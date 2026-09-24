@@ -8,10 +8,59 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class UserControllerTest extends BaseControllerTest {
 
     private static final String UA = "TestClient/1.0";
+
+    @Test
+    void publicPagesAndAdminLoginHaveSeparateRoutes() throws Exception {
+        mockMvcWithoutCsrf.perform(get("/front/login").header("User-Agent", UA))
+                .andExpect(status().isOk()).andExpect(view().name("zhitu_auth"));
+        mockMvcWithoutCsrf.perform(get("/front/register").header("User-Agent", UA))
+                .andExpect(status().isOk()).andExpect(view().name("zhitu_auth"));
+        mockMvcWithoutCsrf.perform(get("/adminlogin").header("User-Agent", UA))
+                .andExpect(status().isOk()).andExpect(view().name("login"));
+    }
+
+    @Test
+    void registerPersistsEmailAndNameAndSupportsCaseInsensitiveEmailLogin() throws Exception {
+        mockMvc.perform(post("/api/users/register").header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content("{\"username\":\"20261234\",\"realName\":\"小王\","
+                                + "\"email\":\"Student@Example.edu\",\"password\":\"pass12345\"}"))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT email FROM users WHERE username = '20261234'", String.class))
+                .isEqualTo("student@example.edu");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT real_name FROM users WHERE username = '20261234'", String.class))
+                .isEqualTo("小王");
+        mockMvc.perform(post("/api/users/login").header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content("{\"username\":\"STUDENT@example.edu\",\"password\":\"pass12345\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("20261234"));
+        mockMvc.perform(post("/api/users/register").header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content("{\"username\":\"20261235\",\"email\":\"student@EXAMPLE.edu\","
+                                + "\"password\":\"pass12345\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void invalidEmailIsRejectedAndLegacyRegistrationKeepsNullEmail() throws Exception {
+        mockMvc.perform(post("/api/users/register").header("User-Agent", UA)
+                        .contentType("application/json")
+                        .content("{\"username\":\"bademailuser\",\"email\":\"not-an-email\","
+                                + "\"password\":\"pass12345\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.email").exists());
+        registerUser("legacyuser", "pass123");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT email FROM users WHERE username = 'legacyuser'", String.class)).isNull();
+    }
 
     @Test
     @DisplayName("POST /api/users/register - happy path returns 200")

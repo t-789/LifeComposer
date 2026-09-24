@@ -57,6 +57,8 @@ capability_tags
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE NOT NULL,
+  email TEXT NULL,                               -- v0.1.1：旧用户允许 NULL，大小写不敏感唯一
+  real_name TEXT NULL,                           -- v0.1.1：新注册页填写的姓名
   password_hash TEXT NOT NULL,
   type INTEGER NOT NULL DEFAULT 1 CHECK(type IN (1,2)),
   is_banned BOOLEAN NOT NULL DEFAULT 0,
@@ -69,6 +71,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_changed_at TIMESTAMP NULL,                   -- v0.0.6：最近一次设置密码时间
   credential_version INTEGER NOT NULL DEFAULT 1         -- v0.0.6：会话失效用的密码代号
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_ci ON users(lower(email)) WHERE email IS NOT NULL;
 ```
 
 **字段说明：**
@@ -77,6 +80,8 @@ CREATE TABLE IF NOT EXISTS users (
 |------|------|------|------|
 | `id` | 自动 | 主键 | 1 |
 | `username` | 是 | 用户名，唯一 | 'alice' |
+| `email` | 否 | 注册邮箱，存储时归一为小写；非空值大小写不敏感唯一。旧用户为 NULL，未做邮箱验证 | 'alice@example.edu' |
+| `real_name` | 否 | 注册页姓名；旧用户为 NULL | '张三' |
 | `password_hash` | 是 | BCrypt 哈希密码 | `$2a$10$...` |
 | `type` | 是 | 用户类型：1=USER, 2=ADMIN | 1 |
 | `is_banned` | 是 | 是否封禁（0=正常，1=封禁） | 0 |

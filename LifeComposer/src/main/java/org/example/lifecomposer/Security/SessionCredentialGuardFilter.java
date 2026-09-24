@@ -79,7 +79,7 @@ public class SessionCredentialGuardFilter extends OncePerRequestFilter {
         Integer currentVersion = userRepository.findCredentialVersion(user.getId());
         if (currentVersion == null || !currentVersion.equals(sessionVersion)) {
             rejectSession(request, response, session,
-                    "SESSION_EXPIRED", "密码已变更，请重新登录", "/login?expired");
+                    "SESSION_EXPIRED", "密码已变更，请重新登录", "/front/login?expired");
             return;
         }
 
@@ -87,7 +87,7 @@ public class SessionCredentialGuardFilter extends OncePerRequestFilter {
             Long expiresAt = SessionCredential.tempExpiresAtMillis(session);
             if (expiresAt != null && System.currentTimeMillis() > expiresAt) {
                 rejectSession(request, response, session,
-                        "TEMP_PASSWORD_EXPIRED", "临时密码已过期，请联系管理员重新下发", "/login?expired");
+                        "TEMP_PASSWORD_EXPIRED", "临时密码已过期，请联系管理员重新下发", "/front/login?expired");
                 return;
             }
             if (!allowedWhileResetRequired(request)) {

@@ -10,6 +10,8 @@ import java.sql.Timestamp;
 public class User {
     private Integer id;
     private String username;
+    private String email;
+    private String realName;
     private String passwordHash;
     /**
      * type=1 -> USER, type=2 -> ADMIN

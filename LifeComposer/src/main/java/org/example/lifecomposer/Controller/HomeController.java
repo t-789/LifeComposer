@@ -14,6 +14,16 @@ public class HomeController {
 
     @GetMapping("/login")
     public String login() {
+        return "redirect:/front/login";
+    }
+
+    @GetMapping({"/front/login", "/front/register"})
+    public String userAuthentication() {
+        return "zhitu_auth";
+    }
+
+    @GetMapping("/adminlogin")
+    public String adminLogin() {
         return "login";
     }
 
