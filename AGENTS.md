@@ -77,9 +77,9 @@ LifeComposer/                          # 当前 Spring Boot 后端
    ├── .env.example                    # 环境变量样例（含 LIFECOMPOSER_INITIAL_ADMIN_PASSWORD 占位符）
    └── data.db                         # SQLite 数据文件 (自动创建，被 .gitignore)
 
-.omo/
-   ├── plans/                          # 规划文件（纳入版本控制）
-   ├── evidence/                       # 执行证据（被 .gitignore）
+.omo/（被 .gitignore）
+   ├── plans/                          # 规划文件
+   ├── evidence/                       # 执行证据
    └── notepads/                       # 学习记录
 
 样例/                                  # 数据交付包（2026-09-05 快照：resources/画像/RAG切片/能力字典/加分规则提取）
@@ -87,18 +87,12 @@ LifeComposer/                          # 当前 Spring Boot 后端
 立项申请书.md                          # 立项申请书全文摘要
 SCHEMA.md                            # 数据库表结构
 API.md                               # API 端点清单
+API_GUIDE.md                         # API 调用参考
 PROJECT_PLAN.md                      # 项目规划、进度与调研数据
 调研报告摘要-立项书版.docx           # 立项书版调研摘要
 大学生成长路径与竞赛参与需求调研-默认报告.pdf # 问卷原始数据
+CONTRIBUTING.md                      # 贡献指南
 ```
-
-### 外部参考
-
-参考项目位于 `/Users/liuzy/Desktop/mess/雏雁计划/RepositoryDemo/`：
-- 包含更多功能（论坛、地图点位、AI聊天、统计、安全提问），可作架构参考
-- 使用全局 `static Connection`（已修复的 anti-pattern）
-- Python AI 服务在 `external/ai_service.py`（Flask, port 8000, DeepSeek API）
-- 前端同学的 `.html` 文件在 `external/templates/`
 
 ### 当前开发者
 
